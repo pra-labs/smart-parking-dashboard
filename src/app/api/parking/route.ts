@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { getParkingState, updateParkingState, GateStatus } from "@/lib/parkingStore";
+import {
+  getParkingState,
+  updateParkingState,
+  GateStatus,
+  ExitGateStatus,
+} from "@/lib/parkingStore";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +29,11 @@ export async function GET() {
       free: state.free,
       occupied: 3 - state.free,
       gate: state.gate,
+      exitGate: state.exitGate || "IDLE",
+      temp: state.temp ?? 27.5,
+      humidity: state.humidity ?? 55,
+      emergency: state.emergency ?? false,
+      nightMode: state.nightMode ?? false,
       lastUpdated: state.lastUpdated,
       elapsedSeconds,
       device: {
@@ -50,18 +60,36 @@ export async function POST(request: Request) {
       s3?: boolean;
       free?: number;
       gate?: GateStatus;
+      exitGate?: ExitGateStatus;
+      temp?: number;
+      humidity?: number;
+      emergency?: boolean;
+      nightMode?: boolean;
     } = {};
 
     if (typeof body.s1 === "boolean") partialUpdate.s1 = body.s1;
     if (typeof body.s2 === "boolean") partialUpdate.s2 = body.s2;
     if (typeof body.s3 === "boolean") partialUpdate.s3 = body.s3;
     if (typeof body.free === "number") partialUpdate.free = body.free;
+
     if (
       body.gate &&
-      ["OPEN", "CLOSED", "FULL", "IDLE"].includes(body.gate.toUpperCase())
+      ["OPEN", "CLOSED", "FULL", "IDLE"].includes(String(body.gate).toUpperCase())
     ) {
-      partialUpdate.gate = body.gate.toUpperCase() as GateStatus;
+      partialUpdate.gate = String(body.gate).toUpperCase() as GateStatus;
     }
+
+    if (
+      body.exitGate &&
+      ["OPEN", "CLOSED", "IDLE"].includes(String(body.exitGate).toUpperCase())
+    ) {
+      partialUpdate.exitGate = String(body.exitGate).toUpperCase() as ExitGateStatus;
+    }
+
+    if (typeof body.temp === "number") partialUpdate.temp = body.temp;
+    if (typeof body.humidity === "number") partialUpdate.humidity = body.humidity;
+    if (typeof body.emergency === "boolean") partialUpdate.emergency = body.emergency;
+    if (typeof body.nightMode === "boolean") partialUpdate.nightMode = body.nightMode;
 
     const updated = updateParkingState(partialUpdate);
 
@@ -74,6 +102,11 @@ export async function POST(request: Request) {
         s3: updated.s3,
         free: updated.free,
         gate: updated.gate,
+        exitGate: updated.exitGate,
+        temp: updated.temp,
+        humidity: updated.humidity,
+        emergency: updated.emergency,
+        nightMode: updated.nightMode,
       },
       timestamp: updated.lastUpdated,
     });

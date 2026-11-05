@@ -1,11 +1,17 @@
 export type GateStatus = "OPEN" | "CLOSED" | "FULL" | "IDLE";
+export type ExitGateStatus = "OPEN" | "CLOSED" | "IDLE";
 
 export interface ParkingState {
   s1: boolean; // true = occupied, false = vacant
   s2: boolean;
   s3: boolean;
   free: number;
-  gate: GateStatus;
+  gate: GateStatus; // Entry gate
+  exitGate: ExitGateStatus; // Exit gate
+  temp: number; // Celsius from DHT22
+  humidity: number; // % from DHT22
+  emergency: boolean; // Fire alarm / high temp
+  nightMode: boolean; // LDR light sensor
   lastUpdated: number; // timestamp in ms
 }
 
@@ -21,6 +27,11 @@ const DEFAULT_STATE: ParkingState = {
   s3: false,
   free: 3,
   gate: "IDLE",
+  exitGate: "IDLE",
+  temp: 27.5,
+  humidity: 55,
+  emergency: false,
+  nightMode: false,
   lastUpdated: Date.now(),
 };
 
@@ -47,12 +58,34 @@ export function updateParkingState(partial: Partial<ParkingState>): ParkingState
     gate = "FULL";
   }
 
+  const exitGate: ExitGateStatus = partial.exitGate || current.exitGate || "IDLE";
+  const temp = typeof partial.temp === "number" && !isNaN(partial.temp) ? partial.temp : current.temp;
+  const humidity = typeof partial.humidity === "number" && !isNaN(partial.humidity) ? partial.humidity : current.humidity;
+
+  // Emergency triggers automatically if temp > 48 or explicitly sent as true
+  let emergency = typeof partial.emergency === "boolean" ? partial.emergency : current.emergency;
+  if (temp > 48) {
+    emergency = true;
+  }
+
+  // During emergency, gates lock open for rapid evacuation
+  if (emergency) {
+    gate = "OPEN";
+  }
+
+  const nightMode = typeof partial.nightMode === "boolean" ? partial.nightMode : current.nightMode;
+
   const newState: ParkingState = {
     s1,
     s2,
     s3,
     free,
     gate,
+    exitGate: emergency ? "OPEN" : exitGate,
+    temp,
+    humidity,
+    emergency,
+    nightMode,
     lastUpdated: Date.now(),
   };
 
