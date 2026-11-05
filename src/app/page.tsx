@@ -25,6 +25,9 @@ import {
   X,
   RotateCcw,
   Zap,
+  Info,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 
 interface SlotData {
@@ -59,10 +62,13 @@ interface LogEntry {
 export default function Dashboard() {
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [lastPacketTime, setLastPacketTime] = useState<string>("WAITING FOR STREAM");
+  const [lastPacketTime, setLastPacketTime] = useState<string>("WAITING...");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isDemoSubmitting, setIsDemoSubmitting] = useState(false);
   const [packetBeat, setPacketBeat] = useState(false);
+
+  // Mobile Hardware Info Popover modal
+  const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
 
   // Debug registers expanded state per bay
   const [expandedBayDebug, setExpandedBayDebug] = useState<Record<string, boolean>>({
@@ -71,8 +77,11 @@ export default function Dashboard() {
     s3: false,
   });
 
-  // Floating Debug Drawer / Simulator Tab
-  const [isDebugPanelOpen, setIsDebugPanelOpen] = useState(true);
+  // FAB Debug Simulator Drawer state
+  const [isSimDrawerOpen, setIsSimDrawerOpen] = useState(false);
+
+  // Bottom Expandable Terminal Sheet state (collapsed vs expanded)
+  const [isTerminalExpanded, setIsTerminalExpanded] = useState(false);
 
   // Log filter tabs
   const [logFilter, setLogFilter] = useState<"ALL" | "POST" | "WARN" | "ERROR">("ALL");
@@ -120,7 +129,7 @@ export default function Dashboard() {
               addLog(`IR_GPIO_27 // BAY_03: ${json.slots.s3 ? "TRIG_OCCUPIED" : "TRIG_CLEAR"}`, json.slots.s3 ? "warn" : "info");
             }
             if (prev.gate !== json.gate) {
-              addLog(`SERVO_SG90 // BARRIER ROTATION: [${json.gate}]`, "post");
+              addLog(`SERVO_SG90 // BARRIER: [${json.gate}]`, "post");
             }
             if (prev.device.online && !json.device.online) {
               addLog("WARN // HEARTBEAT TIMEOUT (>10s). ESP32 LINK OFFLINE.", "error");
@@ -199,6 +208,8 @@ export default function Dashboard() {
     return eventLogs;
   }, [eventLogs, logFilter]);
 
+  const latestLog = eventLogs[0] || { msg: "Awaiting telemetry...", time: "--:--" };
+
   const getGateConfig = (status: string) => {
     switch (status) {
       case "OPEN":
@@ -208,7 +219,6 @@ export default function Dashboard() {
           badge: "bg-emerald-500/20 text-[#00ff9d] border-emerald-500/40",
           accent: "text-[#00ff9d]",
           angleDeg: 90,
-          gaugePercent: 100,
           icon: <CheckCircle2 className="w-5 h-5 text-[#00ff9d]" />,
         };
       case "CLOSED":
@@ -218,7 +228,6 @@ export default function Dashboard() {
           badge: "bg-amber-500/20 text-[#ffb703] border-amber-500/40",
           accent: "text-[#ffb703]",
           angleDeg: 0,
-          gaugePercent: 10,
           icon: <Shield className="w-5 h-5 text-[#ffb703]" />,
         };
       case "FULL":
@@ -228,7 +237,6 @@ export default function Dashboard() {
           badge: "bg-rose-500/20 text-[#ff0055] border-rose-500/40",
           accent: "text-[#ff0055]",
           angleDeg: 0,
-          gaugePercent: 0,
           icon: <AlertTriangle className="w-5 h-5 text-[#ff0055]" />,
         };
       default:
@@ -238,7 +246,6 @@ export default function Dashboard() {
           badge: "bg-cyan-500/20 text-[#00f0ff] border-cyan-500/40",
           accent: "text-[#00f0ff]",
           angleDeg: 15,
-          gaugePercent: 20,
           icon: <Activity className="w-5 h-5 text-[#00f0ff]" />,
         };
     }
@@ -247,120 +254,101 @@ export default function Dashboard() {
   const gateInfo = getGateConfig(gateStatus);
 
   return (
-    <div className="min-h-screen bg-[#07090e] text-slate-200 font-mono flex flex-col relative selection:bg-cyan-400 selection:text-black">
+    <div className="min-h-screen bg-[#07090e] text-slate-200 font-mono flex flex-col relative selection:bg-cyan-400 selection:text-black pb-[calc(4.5rem+env(safe-area-inset-bottom))]">
       
       {/* Background Deep Space Overlay Grid */}
       <div className="fixed inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px] opacity-60 pointer-events-none" />
       <div className="fixed inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(0,240,255,0.1),transparent)] pointer-events-none" />
 
-      {/* Main HUD Container */}
-      <div className="relative z-10 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 pb-28 flex-1 flex flex-col gap-6">
-        
-        {/* 1. HUD TOP BAR (MISSION CONTROL HEADER) */}
-        <header className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-5 border-b border-cyan-500/30">
-          <div>
-            <div className="flex items-center gap-3">
-              <span className={`h-3 w-3 rounded-full transition-all duration-300 ${
+      {/* 1. SLIM COMPACT STATUS APP BAR */}
+      <header className="sticky top-0 z-40 bg-[#07090e]/90 backdrop-blur-xl border-b border-cyan-500/30 px-3 sm:px-6 py-2.5 shadow-md">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
+          
+          {/* Left: Brand + Status Pill in One Clean Line */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span
+              className={`w-2.5 h-2.5 rounded-full shrink-0 transition-all duration-300 ${
                 isOnline
                   ? packetBeat
-                    ? "bg-[#00f0ff] scale-125 shadow-[0_0_15px_#00f0ff]"
-                    : "bg-[#00ff9d] shadow-[0_0_10px_#00ff9d]"
-                  : "bg-[#ff0055] shadow-[0_0_10px_#ff0055]"
-              }`} />
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-[#00f0ff] via-teal-300 to-[#00ff9d] uppercase">
-                PRALABS // PARKING HUD v2.5
+                    ? "bg-[#00f0ff] scale-125 shadow-[0_0_12px_#00f0ff]"
+                    : "bg-[#00ff9d] shadow-[0_0_8px_#00ff9d]"
+                  : "bg-[#ff0055] shadow-[0_0_8px_#ff0055]"
+              }`}
+            />
+            <div className="flex flex-col min-w-0">
+              <h1 className="text-sm sm:text-lg font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-[#00f0ff] to-[#00ff9d] uppercase truncate">
+                PRALABS // HUD
               </h1>
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                <span className={isOnline ? "text-[#00ff9d] font-bold" : "text-[#ff0055] font-bold"}>
+                  {isOnline ? "ONLINE" : "OFFLINE"}
+                </span>
+                <span>&bull;</span>
+                <span className="truncate" suppressHydrationWarning>{lastPacketTime}</span>
+              </div>
             </div>
-            <p className="text-xs text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
-              <span>EDGE TELEMETRY</span>
-              <span className="text-cyan-500">&bull;</span>
-              <span>SUB-MILLISECOND IR MESH</span>
-              <span className="text-cyan-500">&bull;</span>
-              <span className="text-slate-300">NODE: ESP32-WROOM</span>
-              <span className="text-cyan-500">&bull;</span>
-              <span className="text-cyan-400">FREQ: 2.4GHz Wi-Fi / ESP-NOW</span>
-            </p>
           </div>
 
-          {/* Telemetry Link Status Box */}
-          <div className="flex items-center gap-3 bg-[#0c101d] border border-cyan-500/40 px-4 py-2.5 rounded shadow-[0_0_15px_rgba(0,240,255,0.15)]">
-            <div className="text-right">
-              <div className="text-[10px] text-slate-400 tracking-wider">TELEMETRY LINK</div>
-              <div className="text-xs font-bold flex items-center gap-1.5 justify-end">
-                {isOnline ? (
-                  <>
-                    <Wifi className="w-3.5 h-3.5 text-[#00ff9d]" />
-                    <span className="text-[#00ff9d]">ONLINE // 10ms</span>
-                  </>
-                ) : (
-                  <>
-                    <WifiOff className="w-3.5 h-3.5 text-[#ff0055]" />
-                    <span className="text-[#ff0055]">OFFLINE (&gt;10s)</span>
-                  </>
-                )}
-              </div>
-              <div className="text-[10px] text-slate-500 flex items-center gap-1 justify-end mt-0.5">
-                <Clock className="w-3 h-3 text-cyan-400" />
-                <span>LAST PKT: </span>
-                <span className="text-slate-300 font-bold" suppressHydrationWarning>{lastPacketTime}</span>
-              </div>
-            </div>
+          {/* Right: Hardware Info Chip + Large Touch Refresh Button */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            
+            {/* Info Trigger Button */}
+            <button
+              onClick={() => setIsInfoModalOpen(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-slate-900 border border-cyan-500/30 text-cyan-400 hover:text-white hover:border-cyan-400 text-xs transition min-h-[38px] min-w-[38px] justify-center"
+              title="Hardware & Node Specs"
+            >
+              <Info className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline text-[11px] font-bold">SPECS</span>
+            </button>
 
-            <div className="relative flex items-center justify-center pl-2 border-l border-slate-800">
-              <span
-                className={`w-3.5 h-3.5 rounded-full ${
-                  isOnline ? "bg-[#00ff9d] shadow-[0_0_10px_#00ff9d]" : "bg-[#ff0055] shadow-[0_0_10px_#ff0055]"
-                }`}
-              />
-              <span
-                className={`absolute w-5 h-5 rounded-full animate-ping opacity-40 ${
-                  isOnline ? "bg-[#00ff9d]" : "bg-[#ff0055]"
-                }`}
-              />
-            </div>
-
+            {/* Refresh Button (Touch Target >= 44x44px) */}
             <button
               onClick={() => fetchParkingData(true)}
-              title="Manual Telemetry Poll"
+              title="Poll Telemetry"
               disabled={isRefreshing}
-              className="ml-2 p-1.5 rounded bg-slate-900 border border-cyan-500/30 text-cyan-400 hover:text-white hover:border-cyan-400 transition"
+              className="flex items-center justify-center min-w-[44px] min-h-[44px] rounded bg-slate-900 border border-cyan-500/30 text-cyan-400 hover:text-white hover:border-cyan-400 active:scale-95 transition"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin text-[#00f0ff]" : ""}`} />
             </button>
           </div>
-        </header>
+        </div>
+      </header>
 
-        {/* 2. HUD STAT METRICS BAR */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Main Body */}
+      <main className="relative z-10 max-w-7xl mx-auto w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6 flex-1 flex flex-col gap-4 sm:gap-6">
+        
+        {/* 2. HIGH-LEVEL KPI METRICS (TIGHT 2x2 GRID ON MOBILE, 4-COL ON DESKTOP) */}
+        <section className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
           
-          {/* Facility Capacity */}
-          <div className="relative bg-[#0c101d] border border-cyan-500/30 p-4 rounded shadow-[0_0_15px_rgba(0,240,255,0.08)]">
-            <div className="flex justify-between items-center text-slate-400 text-xs">
-              <span className="tracking-wider">SECTOR CAPACITY</span>
-              <span className="text-[10px] text-cyan-400 bg-cyan-950/80 border border-cyan-800 px-1.5 py-0.5 rounded">Z-01</span>
+          {/* Capacity */}
+          <div className="relative bg-[#0c101d] border border-cyan-500/30 p-3 sm:p-4 rounded shadow-[0_0_12px_rgba(0,240,255,0.06)] flex flex-col justify-between">
+            <div className="flex justify-between items-center text-slate-400 text-[10px] sm:text-xs">
+              <span className="tracking-wider uppercase font-bold">CAPACITY</span>
+              <span className="text-[9px] sm:text-[10px] text-cyan-400 bg-cyan-950/80 border border-cyan-800 px-1 py-0.2 rounded">Z-01</span>
             </div>
-            <div className="text-3xl font-black text-white my-1">
-              3 <span className="text-xs text-slate-500 font-normal">TOTAL BAYS</span>
+            <div className="text-2xl sm:text-3xl font-black text-white my-1">
+              3 <span className="text-[10px] sm:text-xs text-slate-500 font-normal">BAYS</span>
             </div>
-            <div className="text-[11px] text-slate-400 pt-2 border-t border-slate-800/80 flex justify-between">
+            <div className="text-[9px] sm:text-[11px] text-slate-400 pt-1.5 border-t border-slate-800/80 flex justify-between">
               <span>HARDWARE:</span>
-              <span className="text-slate-200">3x INFRARED ARRAY</span>
+              <span className="text-slate-200">3x IR ARRAY</span>
             </div>
           </div>
 
-          {/* Vacant Bays (Emerald Green) */}
-          <div className="relative bg-[#0c101d] border border-emerald-500/40 p-4 rounded shadow-[0_0_20px_rgba(0,255,157,0.12)]">
-            <div className="flex justify-between items-center text-emerald-400 text-xs font-bold">
-              <span className="flex items-center gap-1.5">
-                <CircleDot className="w-3.5 h-3.5 animate-pulse" />
-                VACANT SLOTS
+          {/* Vacant Slots (Emerald) */}
+          <div className="relative bg-[#0c101d] border border-emerald-500/40 p-3 sm:p-4 rounded shadow-[0_0_16px_rgba(0,255,157,0.1)] flex flex-col justify-between">
+            <div className="flex justify-between items-center text-emerald-400 text-[10px] sm:text-xs font-bold">
+              <span className="flex items-center gap-1">
+                <CircleDot className="w-3 h-3 animate-pulse" />
+                VACANT
               </span>
-              <span className="text-[10px] bg-emerald-500/20 text-[#00ff9d] border border-emerald-500/40 px-1.5 py-0.5 rounded">FREE</span>
+              <span className="text-[9px] sm:text-[10px] bg-emerald-500/20 text-[#00ff9d] border border-emerald-500/40 px-1 py-0.2 rounded">FREE</span>
             </div>
-            <div className="text-4xl font-black text-[#00ff9d] my-1 drop-shadow-[0_0_12px_rgba(0,255,157,0.4)]">
+            <div className="text-3xl sm:text-4xl font-black text-[#00ff9d] my-1 drop-shadow-[0_0_10px_rgba(0,255,157,0.4)]">
               {loading ? "..." : freeSlots}
             </div>
-            <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-2">
+            <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-1">
               <div
                 className="bg-[#00ff9d] h-full transition-all duration-700 shadow-[0_0_8px_#00ff9d]"
                 style={{ width: `${(freeSlots / 3) * 100}%` }}
@@ -368,19 +356,19 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Occupied Bays (Crimson Red) */}
-          <div className="relative bg-[#0c101d] border border-rose-500/40 p-4 rounded shadow-[0_0_20px_rgba(255,0,85,0.12)]">
-            <div className="flex justify-between items-center text-rose-400 text-xs font-bold">
-              <span className="flex items-center gap-1.5">
-                <Car className="w-3.5 h-3.5" />
-                OCCUPIED SLOTS
+          {/* Occupied Slots (Rose) */}
+          <div className="relative bg-[#0c101d] border border-rose-500/40 p-3 sm:p-4 rounded shadow-[0_0_16px_rgba(255,0,85,0.1)] flex flex-col justify-between">
+            <div className="flex justify-between items-center text-rose-400 text-[10px] sm:text-xs font-bold">
+              <span className="flex items-center gap-1">
+                <Car className="w-3 h-3" />
+                OCCUPIED
               </span>
-              <span className="text-[10px] bg-rose-500/20 text-[#ff0055] border border-rose-500/40 px-1.5 py-0.5 rounded">{occupancyRate}% DENSITY</span>
+              <span className="text-[9px] sm:text-[10px] bg-rose-500/20 text-[#ff0055] border border-rose-500/40 px-1 py-0.2 rounded">{occupancyRate}%</span>
             </div>
-            <div className="text-4xl font-black text-[#ff0055] my-1 drop-shadow-[0_0_12px_rgba(255,0,85,0.4)]">
+            <div className="text-3xl sm:text-4xl font-black text-[#ff0055] my-1 drop-shadow-[0_0_10px_rgba(255,0,85,0.4)]">
               {loading ? "..." : occupiedSlots}
             </div>
-            <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-2">
+            <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-1">
               <div
                 className="bg-[#ff0055] h-full transition-all duration-700 shadow-[0_0_8px_#ff0055]"
                 style={{ width: `${(occupiedSlots / 3) * 100}%` }}
@@ -389,72 +377,72 @@ export default function Dashboard() {
           </div>
 
           {/* Barrier Gate Status */}
-          <div className="relative bg-[#0c101d] border border-cyan-500/30 p-4 rounded shadow-[0_0_15px_rgba(0,240,255,0.08)]">
-            <div className="flex justify-between items-center text-slate-400 text-xs">
-              <span className="flex items-center gap-1.5">
-                <ArrowRightLeft className="w-3.5 h-3.5 text-[#00f0ff]" />
-                SERVO BARRIER
+          <div className="relative bg-[#0c101d] border border-cyan-500/30 p-3 sm:p-4 rounded shadow-[0_0_12px_rgba(0,240,255,0.06)] flex flex-col justify-between">
+            <div className="flex justify-between items-center text-slate-400 text-[10px] sm:text-xs">
+              <span className="flex items-center gap-1">
+                <ArrowRightLeft className="w-3 h-3 text-[#00f0ff]" />
+                GATE SERVO
               </span>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded border uppercase font-bold ${gateInfo.badge}`}>
+              <span className={`text-[9px] sm:text-[10px] px-1 py-0.2 rounded border uppercase font-bold ${gateInfo.badge}`}>
                 {gateStatus}
               </span>
             </div>
-            <div className={`text-base font-bold my-1 tracking-tight ${gateInfo.accent}`}>
-              {gateInfo.title}
+            <div className={`text-sm sm:text-base font-bold my-1 tracking-tight truncate ${gateInfo.accent}`}>
+              {gateInfo.title.split("//")[0]}
             </div>
-            <div className="text-[11px] text-slate-400 pt-2 border-t border-slate-800/80 flex justify-between">
-              <span>SERVO DEGREE:</span>
+            <div className="text-[9px] sm:text-[11px] text-slate-400 pt-1.5 border-t border-slate-800/80 flex justify-between">
+              <span>ANGLE:</span>
               <span className={`font-bold ${gateInfo.accent}`}>{gateInfo.angleDeg}°</span>
             </div>
           </div>
         </section>
 
-        {/* 3. DIGITAL TWIN PARKING BAYS + RADIAL GAUGE + CRT LOGS */}
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* 3. DIGITAL TWIN BAY MATRIX & RADIAL GAUGE */}
+        <section className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
           
-          {/* DIGITAL TWIN BAYS (2 Cols) */}
-          <div className="lg:col-span-2 bg-[#0c101d] border border-cyan-500/30 p-6 rounded shadow-[0_0_20px_rgba(0,240,255,0.08)] flex flex-col justify-between">
+          {/* ADAPTIVE BAY MATRIX CARDS (2 Cols) */}
+          <div className="lg:col-span-2 bg-[#0c101d] border border-cyan-500/30 p-4 sm:p-6 rounded shadow-[0_0_20px_rgba(0,240,255,0.08)] flex flex-col justify-between">
             
             {/* Header */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-4 border-b border-slate-800">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-3 border-b border-slate-800">
               <div>
-                <h2 className="text-base sm:text-lg font-bold text-white tracking-widest uppercase flex items-center gap-2">
+                <h2 className="text-sm sm:text-base font-bold text-white tracking-widest uppercase flex items-center gap-2">
                   <span>DIGITAL TWIN // BAY MATRIX</span>
-                  <span className="text-[10px] text-cyan-400 bg-cyan-950 border border-cyan-800 px-2 py-0.5 rounded">REALTIME</span>
+                  <span className="text-[9px] text-cyan-400 bg-cyan-950 border border-cyan-800 px-1.5 py-0.2 rounded">LIVE</span>
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">Top-down isometric bay status with live proximity telemetry</p>
+                <p className="text-[11px] text-slate-400">Sensor occupancy reflection with hardware registers</p>
               </div>
 
               {/* Status Legend */}
               <div className="flex items-center gap-3 text-xs">
                 <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#00ff9d] shadow-[0_0_8px_#00ff9d]" />
-                  <span className="text-slate-300">VACANT</span>
+                  <span className="w-2 h-2 rounded-full bg-[#00ff9d]" />
+                  <span className="text-[11px] text-slate-300">VACANT</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#ff0055] shadow-[0_0_8px_#ff0055]" />
-                  <span className="text-slate-300">OCCUPIED</span>
+                  <span className="w-2 h-2 rounded-full bg-[#ff0055]" />
+                  <span className="text-[11px] text-slate-300">OCCUPIED</span>
                 </div>
               </div>
             </div>
 
             {/* Inbound Road Graphics */}
-            <div className="my-5 rounded bg-[#07090e] border border-dashed border-slate-700/80 p-2.5 text-center text-xs text-slate-400 flex items-center justify-between px-6">
-              <span className="text-cyan-400 font-bold">&gt;&gt; INBOUND ACCESS</span>
-              <div className="flex items-center gap-3">
-                <span className="h-0.5 w-8 bg-amber-400/50" />
-                <span className="tracking-widest uppercase text-slate-300 text-[11px] font-bold">DRIVEWAY LANE // 10 KM/H</span>
-                <span className="h-0.5 w-8 bg-amber-400/50" />
+            <div className="my-3 sm:my-5 rounded bg-[#07090e] border border-dashed border-slate-700/80 p-2 text-center text-xs text-slate-400 flex items-center justify-between px-3 sm:px-6">
+              <span className="text-cyan-400 font-bold text-[10px] sm:text-xs">&gt;&gt; INBOUND</span>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <span className="h-0.5 w-4 sm:w-8 bg-amber-400/50" />
+                <span className="tracking-widest uppercase text-slate-300 text-[10px] sm:text-[11px] font-bold">DRIVEWAY LANE</span>
+                <span className="h-0.5 w-4 sm:w-8 bg-amber-400/50" />
               </div>
-              <span className="text-slate-500 font-bold">SLOT REGION</span>
+              <span className="text-slate-500 font-bold text-[10px] sm:text-xs">10 KM/H</span>
             </div>
 
-            {/* 3 Digital Twin Bay Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+            {/* 3 Adaptive Digital Twin Bay Cards (Full width tap targets on mobile, 3-col on desktop) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-5">
               {[
-                { id: "s1", label: "BAY // 01", pin: "13", adc: "ADC1_CH4", isOccupied: data?.slots?.s1 ?? false },
-                { id: "s2", label: "BAY // 02", pin: "14", adc: "ADC1_CH6", isOccupied: data?.slots?.s2 ?? false },
-                { id: "s3", label: "BAY // 03", pin: "27", adc: "ADC2_CH7", isOccupied: data?.slots?.s3 ?? false },
+                { id: "s1", label: "BAY // 01", pin: "GPIO 13", adc: "ADC1_CH4", isOccupied: data?.slots?.s1 ?? false },
+                { id: "s2", label: "BAY // 02", pin: "GPIO 14", adc: "ADC1_CH6", isOccupied: data?.slots?.s2 ?? false },
+                { id: "s3", label: "BAY // 03", pin: "GPIO 27", adc: "ADC2_CH7", isOccupied: data?.slots?.s3 ?? false },
               ].map((bay) => {
                 const isOccupied = bay.isOccupied;
                 const isDebugOpen = expandedBayDebug[bay.id];
@@ -462,23 +450,23 @@ export default function Dashboard() {
                 return (
                   <div
                     key={bay.id}
-                    className={`relative p-5 rounded-lg border-2 transition-all duration-300 flex flex-col justify-between ${
+                    className={`relative p-4 sm:p-5 rounded-lg border-2 transition-all duration-300 flex flex-col justify-between ${
                       isOccupied
-                        ? "bg-[#140b12] border-rose-500/70 shadow-[0_0_25px_rgba(255,0,85,0.25)]"
-                        : "bg-[#0b1411] border-emerald-500/70 shadow-[0_0_25px_rgba(0,255,157,0.2)]"
+                        ? "bg-[#140b12] border-rose-500/70 shadow-[0_0_20px_rgba(255,0,85,0.2)]"
+                        : "bg-[#0b1411] border-emerald-500/70 shadow-[0_0_20px_rgba(0,255,157,0.18)]"
                     }`}
                   >
-                    {/* Bay Markings */}
+                    {/* Bay Side Markings */}
                     <div className="absolute top-0 bottom-0 left-1 w-1 bg-amber-400/40 rounded-full pointer-events-none" />
                     <div className="absolute top-0 bottom-0 right-1 w-1 bg-amber-400/40 rounded-full pointer-events-none" />
 
-                    {/* Top Bay Tag */}
-                    <div className="flex justify-between items-center mb-3">
+                    {/* Top Tag */}
+                    <div className="flex justify-between items-center mb-2 sm:mb-3">
                       <span className="text-xs font-bold tracking-widest text-slate-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-700">
                         {bay.label}
                       </span>
                       <span
-                        className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded border ${
+                        className={`px-2 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase rounded border ${
                           isOccupied
                             ? "bg-rose-500/20 text-[#ff0055] border-rose-500/40 animate-pulse"
                             : "bg-emerald-500/20 text-[#00ff9d] border-emerald-500/40"
@@ -488,63 +476,63 @@ export default function Dashboard() {
                       </span>
                     </div>
 
-                    {/* Holographic Isometric Center Representation */}
-                    <div className="my-6 flex flex-col items-center justify-center">
+                    {/* Center Hologram */}
+                    <div className="my-3 sm:my-5 flex flex-col items-center justify-center">
                       {isOccupied ? (
                         <div className="flex flex-col items-center">
-                          <div className="relative p-5 rounded-xl bg-rose-500/10 border border-rose-500/40 shadow-[0_0_30px_rgba(255,0,85,0.3)]">
-                            <Car className="w-16 h-16 text-[#ff0055] filter drop-shadow-[0_0_10px_#ff0055]" />
-                            <div className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+                          <div className="relative p-4 sm:p-5 rounded-xl bg-rose-500/10 border border-rose-500/40 shadow-[0_0_25px_rgba(255,0,85,0.25)]">
+                            <Car className="w-12 h-12 sm:w-16 sm:h-16 text-[#ff0055] filter drop-shadow-[0_0_8px_#ff0055]" />
+                            <div className="absolute -top-1 -right-1 flex h-3 w-3">
                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-rose-500"></span>
+                              <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
                             </div>
                           </div>
-                          <span className="mt-3 text-xs font-bold text-rose-400">VEHICLE IN BAY</span>
-                          <span className="text-[10px] text-slate-400">IR_DIST: &lt;15cm</span>
+                          <span className="mt-2 text-[11px] sm:text-xs font-bold text-rose-400">VEHICLE IN BAY</span>
+                          <span className="text-[9px] text-slate-400">IR_DIST: &lt;15cm</span>
                         </div>
                       ) : (
                         <div className="flex flex-col items-center">
-                          <div className="relative p-5 rounded-xl bg-emerald-500/[0.06] border border-dashed border-emerald-500/40 holo-grid shadow-[0_0_20px_rgba(0,255,157,0.15)]">
-                            <Car className="w-16 h-16 text-emerald-500/20" />
+                          <div className="relative p-4 sm:p-5 rounded-xl bg-emerald-500/[0.06] border border-dashed border-emerald-500/40 holo-grid shadow-[0_0_15px_rgba(0,255,157,0.12)]">
+                            <Car className="w-12 h-12 sm:w-16 sm:h-16 text-emerald-500/20" />
                             <div className="absolute inset-0 flex items-center justify-center">
-                              <span className="text-[11px] font-bold text-[#00ff9d] bg-black/80 px-2 py-0.5 rounded border border-emerald-500/50 shadow-lg">
-                                BAY FREE
+                              <span className="text-[10px] sm:text-[11px] font-bold text-[#00ff9d] bg-black/80 px-2 py-0.5 rounded border border-emerald-500/50">
+                                FREE
                               </span>
                             </div>
                           </div>
-                          <span className="mt-3 text-xs font-bold text-[#00ff9d] flex items-center gap-1">
+                          <span className="mt-2 text-[11px] sm:text-xs font-bold text-[#00ff9d] flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-[#00ff9d] animate-ping" />
                             READY TO PARK
                           </span>
-                          <span className="text-[10px] text-slate-400">BEAM UNOBSTRUCTED</span>
+                          <span className="text-[9px] text-slate-400">BEAM UNOBSTRUCTED</span>
                         </div>
                       )}
                     </div>
 
-                    {/* Sensor Technical Depth & Collapsible Registers */}
-                    <div className="pt-3 border-t border-slate-800 space-y-1 text-xs text-slate-400">
-                      <div className="flex justify-between">
-                        <span>GPIO PIN:</span>
+                    {/* Technical Depth & Expandable Hardware Registers Accordion */}
+                    <div className="pt-2.5 border-t border-slate-800 space-y-1 text-xs text-slate-400">
+                      <div className="flex justify-between text-[11px]">
+                        <span>PIN:</span>
                         <span className="text-slate-200 font-bold">{bay.pin}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span>RAW REGISTER:</span>
+                      <div className="flex justify-between text-[11px]">
+                        <span>REGISTER:</span>
                         <span className={isOccupied ? "text-[#ff0055] font-bold" : "text-[#00f0ff] font-bold"}>
                           {isOccupied ? "SIG_HIGH" : "SIG_LOW"}
                         </span>
                       </div>
 
-                      {/* Toggle Drawer */}
+                      {/* Touch target >= 44px */}
                       <button
                         onClick={() => toggleBayDebug(bay.id)}
-                        className="mt-2 w-full flex items-center justify-between text-[10px] text-slate-400 hover:text-cyan-400 py-1 px-2 rounded bg-black/40 border border-slate-800 transition"
+                        className="mt-2 w-full flex items-center justify-between text-[10px] text-slate-300 hover:text-cyan-400 py-2.5 px-3 rounded bg-black/40 border border-slate-800 min-h-[44px] active:bg-slate-800 transition"
                       >
-                        <span>{isDebugOpen ? "HIDE REGISTERS" : "VIEW REGISTERS"}</span>
-                        {isDebugOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        <span className="font-bold">{isDebugOpen ? "HIDE REGISTERS" : "VIEW REGISTERS"}</span>
+                        {isDebugOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                       </button>
 
                       {isDebugOpen && (
-                        <div className="mt-2 pt-2 border-t border-slate-800 text-[10px] space-y-1 bg-black/60 p-2 rounded">
+                        <div className="mt-2 pt-2 border-t border-slate-800 text-[10px] space-y-1 bg-black/60 p-2.5 rounded animate-in fade-in duration-200">
                           <div className="flex justify-between">
                             <span className="text-slate-500">ADC CHANNEL:</span>
                             <span className="text-slate-300">{bay.adc}</span>
@@ -567,168 +555,190 @@ export default function Dashboard() {
               })}
             </div>
 
-            {/* Sector Utilization Footer */}
-            <div className="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+            {/* Utilization Banner */}
+            <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
               <span className="flex items-center gap-1.5 text-cyan-400">
-                <Sparkles className="w-4 h-4" />
-                <span>AUTONOMOUS VEHICLE GUIDANCE ACTIVE</span>
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>INTELLIGENT ALLOCATION</span>
               </span>
               <span>UTILIZATION: <strong className="text-white">{occupancyRate}%</strong></span>
             </div>
           </div>
 
-          {/* RIGHT COLUMN: RADIAL SERVO DIAL + MISSION CONTROL TERMINAL */}
-          <div className="space-y-6">
-            
-            {/* RADIAL SERVO SPEEDOMETER / DIAL GAUGE */}
-            <div className="bg-[#0c101d] border border-cyan-500/30 p-6 rounded shadow-[0_0_20px_rgba(0,240,255,0.08)] relative overflow-hidden">
-              <div className="flex justify-between items-center pb-4 border-b border-slate-800">
-                <div className="flex items-center gap-2">
-                  <Gauge className="w-4 h-4 text-cyan-400" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-white">SG90 SERVO RADIAL DIAL</h3>
-                </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded border uppercase font-bold ${gateInfo.badge}`}>
-                  {gateStatus}
-                </span>
+          {/* SERVO RADIAL GAUGE CARD */}
+          <div className="bg-[#0c101d] border border-cyan-500/30 p-4 sm:p-6 rounded shadow-[0_0_20px_rgba(0,240,255,0.08)] relative overflow-hidden flex flex-col justify-between">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Gauge className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-xs font-bold uppercase tracking-widest text-white">SG90 RADIAL DIAL</h3>
               </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded border uppercase font-bold ${gateInfo.badge}`}>
+                {gateStatus}
+              </span>
+            </div>
 
-              {/* Radial Arc SVG Gauge */}
-              <div className="py-6 flex flex-col items-center justify-center">
-                <div className="relative w-44 h-32 flex items-center justify-center">
-                  
-                  {/* SVG Arc Gauge */}
-                  <svg className="w-40 h-40 -rotate-90 transform" viewBox="0 0 100 100">
-                    {/* Background Track Arc */}
-                    <circle
-                      cx="50"
-                      cy="50"
-                      r="40"
-                      stroke="#1e293b"
-                      strokeWidth="8"
-                      fill="transparent"
-                      strokeDasharray="251.2"
-                      strokeDashoffset="62.8"
-                    />
-                    {/* Active Animated Arc */}
-                    <circle
-                      cx="50"
-                      cy="50"
-                      r="40"
-                      stroke={gateStatus === "OPEN" ? "#00ff9d" : gateStatus === "CLOSED" ? "#ffb703" : "#ff0055"}
-                      strokeWidth="8"
-                      strokeLinecap="round"
-                      fill="transparent"
-                      strokeDasharray="251.2"
-                      strokeDashoffset={251.2 - (188.4 * (gateInfo.angleDeg / 90))}
-                      className="transition-all duration-700 ease-out"
-                    />
-                  </svg>
+            {/* Radial Arc SVG Gauge */}
+            <div className="py-4 sm:py-6 flex flex-col items-center justify-center">
+              <div className="relative w-36 h-36 sm:w-44 sm:h-44 flex items-center justify-center">
+                <svg className="w-36 h-36 sm:w-40 sm:h-40 -rotate-90 transform" viewBox="0 0 100 100">
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="40"
+                    stroke="#1e293b"
+                    strokeWidth="8"
+                    fill="transparent"
+                    strokeDasharray="251.2"
+                    strokeDashoffset="62.8"
+                  />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="40"
+                    stroke={gateStatus === "OPEN" ? "#00ff9d" : gateStatus === "CLOSED" ? "#ffb703" : "#ff0055"}
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    fill="transparent"
+                    strokeDasharray="251.2"
+                    strokeDashoffset={251.2 - (188.4 * (gateInfo.angleDeg / 90))}
+                    className="transition-all duration-700 ease-out"
+                  />
+                </svg>
 
-                  {/* Inside Arc Center Info */}
-                  <div className="absolute flex flex-col items-center justify-center">
-                    <span className="text-3xl font-black text-white">{gateInfo.angleDeg}°</span>
-                    <span className="text-[10px] text-slate-400 uppercase tracking-wider">SERVO ANGLE</span>
-                  </div>
-                </div>
-
-                <div className="text-center mt-2">
-                  <div className={`text-xs font-bold ${gateInfo.accent}`}>{gateInfo.title}</div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">{gateInfo.desc}</p>
+                <div className="absolute flex flex-col items-center justify-center">
+                  <span className="text-2xl sm:text-3xl font-black text-white">{gateInfo.angleDeg}°</span>
+                  <span className="text-[9px] text-slate-400 uppercase tracking-wider">SERVO ANGLE</span>
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-800 flex justify-between text-xs text-slate-400">
-                <span>INTERLOCK:</span>
-                <span className="text-white font-bold">{gateStatus === "FULL" ? "LOCKED (FULL)" : "ACTIVE"}</span>
+              <div className="text-center mt-2">
+                <div className={`text-xs font-bold ${gateInfo.accent}`}>{gateInfo.title}</div>
+                <p className="text-[11px] text-slate-400 mt-0.5">{gateInfo.desc}</p>
               </div>
             </div>
 
-            {/* MISSION CONTROL CRT TELEMETRY TERMINAL */}
-            <div className="bg-[#0c101d] border border-cyan-500/30 p-5 rounded shadow-[0_0_20px_rgba(0,240,255,0.08)] relative overflow-hidden crt-scanlines">
-              
-              <div className="flex flex-col gap-2 pb-3 border-b border-slate-800">
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <Terminal className="w-4 h-4 text-cyan-400" />
-                    <h3 className="text-xs uppercase font-bold tracking-widest text-white">MISSION CONTROL LOGS</h3>
-                  </div>
-                  <span className="text-[10px] text-slate-400">BUFFER: {filteredLogs.length}</span>
-                </div>
-
-                {/* Filter Tabs */}
-                <div className="flex items-center gap-1.5 pt-1">
-                  {(["ALL", "POST", "WARN", "ERROR"] as const).map((filter) => (
-                    <button
-                      key={filter}
-                      onClick={() => setLogFilter(filter)}
-                      className={`px-2 py-0.5 rounded text-[10px] transition ${
-                        logFilter === filter
-                          ? "bg-cyan-500/20 text-[#00f0ff] border border-cyan-500/40"
-                          : "text-slate-400 bg-slate-900 hover:text-white"
-                      }`}
-                    >
-                      {filter}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Event Log Window with Blinking Cursor */}
-              <div className="mt-3 space-y-1 max-h-[170px] overflow-y-auto text-[11px] pr-1">
-                {filteredLogs.map((log) => (
-                  <div key={log.id} className="flex items-start gap-1.5 py-0.5">
-                    <span className="text-slate-500 whitespace-nowrap" suppressHydrationWarning>[{log.time}]</span>
-                    <span
-                      className={
-                        log.type === "error"
-                          ? "text-[#ff0055] font-bold"
-                          : log.type === "warn"
-                          ? "text-[#ffb703]"
-                          : log.type === "post"
-                          ? "text-[#00f0ff]"
-                          : "text-[#00ff9d]"
-                      }
-                    >
-                      &gt; {log.msg}
-                    </span>
-                  </div>
-                ))}
-                
-                {/* Blinking Cursor */}
-                <div className="flex items-center gap-1 text-cyan-400 text-xs mt-2">
-                  <span>root@esp32-mesh:~#</span>
-                  <span className="w-2 h-4 bg-cyan-400 animate-pulse" />
-                </div>
-              </div>
+            <div className="pt-3 border-t border-slate-800 flex justify-between text-xs text-slate-400">
+              <span>INTERLOCK:</span>
+              <span className="text-white font-bold">{gateStatus === "FULL" ? "LOCKED (FULL)" : "ACTIVE"}</span>
             </div>
           </div>
         </section>
+      </main>
+
+      {/* 5. COLLAPSIBLE BOTTOM DRAWER: MISSION CONTROL TERMINAL & LOGS */}
+      <section className="fixed bottom-0 inset-x-0 z-30 bg-[#07090e]/95 border-t border-cyan-500/40 backdrop-blur-xl shadow-2xl transition-all duration-300">
+        
+        {/* Collapsed Drawer Header Bar (Touch target to expand) */}
+        <div
+          onClick={() => setIsTerminalExpanded(!isTerminalExpanded)}
+          className="px-3 sm:px-6 py-2.5 flex items-center justify-between cursor-pointer hover:bg-slate-900/50 active:bg-slate-900 transition min-h-[46px]"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <Terminal className="w-4 h-4 text-cyan-400 shrink-0" />
+            <span className="text-xs font-bold text-white tracking-wider shrink-0">LOGS:</span>
+            <span className="text-[11px] text-slate-400 truncate max-w-[200px] sm:max-w-md font-mono" suppressHydrationWarning>
+              [{latestLog.time}] {latestLog.msg}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[9px] bg-slate-800 text-cyan-400 px-1.5 py-0.5 rounded border border-slate-700">
+              {filteredLogs.length} EVTS
+            </span>
+            <button className="text-slate-400 hover:text-white p-1">
+              {isTerminalExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Expanded Drawer Terminal Console */}
+        {isTerminalExpanded && (
+          <div className="px-3 sm:px-6 pb-4 pt-1 max-h-[50vh] sm:max-h-[300px] overflow-hidden flex flex-col crt-scanlines border-t border-slate-800">
+            
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-1.5 py-2">
+              {(["ALL", "POST", "WARN", "ERROR"] as const).map((filter) => (
+                <button
+                  key={filter}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLogFilter(filter);
+                  }}
+                  className={`px-2.5 py-1 rounded text-[10px] font-bold transition min-h-[32px] ${
+                    logFilter === filter
+                      ? "bg-cyan-500/20 text-[#00f0ff] border border-cyan-500/40"
+                      : "text-slate-400 bg-slate-900 hover:text-white"
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
+
+            {/* Scrollable Log Lines */}
+            <div className="space-y-1 overflow-y-auto max-h-[220px] text-[11px] pr-1">
+              {filteredLogs.map((log) => (
+                <div key={log.id} className="flex items-start gap-1.5 py-0.5">
+                  <span className="text-slate-500 whitespace-nowrap" suppressHydrationWarning>[{log.time}]</span>
+                  <span
+                    className={
+                      log.type === "error"
+                        ? "text-[#ff0055] font-bold"
+                        : log.type === "warn"
+                        ? "text-[#ffb703]"
+                        : log.type === "post"
+                        ? "text-[#00f0ff]"
+                        : "text-[#00ff9d]"
+                    }
+                  >
+                    &gt; {log.msg}
+                  </span>
+                </div>
+              ))}
+              <div className="flex items-center gap-1 text-cyan-400 text-xs mt-2">
+                <span>root@esp32-mesh:~#</span>
+                <span className="w-2 h-4 bg-cyan-400 animate-pulse" />
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* 6. FLOATING ACTION BUTTON (FAB) & SIMULATOR BOTTOM SHEET */}
+      <div className="fixed bottom-14 right-4 z-40">
+        <button
+          onClick={() => setIsSimDrawerOpen(true)}
+          className="flex items-center justify-center min-w-[50px] min-h-[50px] rounded-full bg-cyan-500 text-black font-black shadow-[0_0_20px_rgba(0,240,255,0.4)] hover:bg-cyan-400 active:scale-95 transition"
+          title="Open Hardware Simulator"
+        >
+          <Sliders className="w-5 h-5" />
+        </button>
       </div>
 
-      {/* 4. DEDICATED MISSION CONTROL DEBUG SIMULATOR (FLOATING TAB) */}
-      <aside className="fixed bottom-4 right-4 z-50">
-        {isDebugPanelOpen ? (
-          <div className="bg-[#0c101d] border border-cyan-500/40 p-4 rounded-lg shadow-2xl max-w-sm w-full animate-in slide-in-from-bottom-5 duration-300">
-            <div className="flex justify-between items-center pb-2 border-b border-slate-800">
+      {/* Simulator Modal / Bottom Sheet */}
+      {isSimDrawerOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-[#0c101d] border border-cyan-500/40 p-4 sm:p-6 rounded-t-2xl sm:rounded-2xl shadow-2xl max-w-md w-full animate-in slide-in-from-bottom-5 duration-300">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-cyan-400" />
-                <span className="text-xs font-bold text-white tracking-wider">HARDWARE SIMULATOR</span>
-                <span className="text-[10px] text-cyan-400 bg-cyan-950 px-1 py-0.2 rounded border border-cyan-800">LIVE</span>
+                <Sliders className="w-5 h-5 text-cyan-400" />
+                <span className="text-sm font-bold text-white tracking-wider">HARDWARE SIMULATOR</span>
+                <span className="text-[9px] text-cyan-400 bg-cyan-950 px-1.5 py-0.2 rounded border border-cyan-800">LIVE</span>
               </div>
               <button
-                onClick={() => setIsDebugPanelOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 transition"
+                onClick={() => setIsSimDrawerOpen(false)}
+                className="text-slate-400 hover:text-white p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded hover:bg-slate-800 transition"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-[11px] text-slate-400 mt-2 mb-3">
-              Trigger raw sensor inputs & cycle servo barrier arm without physical ESP32
+            <p className="text-xs text-slate-400 my-3 leading-relaxed">
+              Inject mock sensor inputs & cycle servo barrier arm without physical ESP32
             </p>
 
             {/* Bay Toggles */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-2.5">
               {[
                 { key: "s1" as const, label: "BAY 01", state: data?.slots?.s1 ?? false },
                 { key: "s2" as const, label: "BAY 02", state: data?.slots?.s2 ?? false },
@@ -738,20 +748,20 @@ export default function Dashboard() {
                   key={b.key}
                   onClick={() => sendDemoUpdate({ [b.key]: !b.state })}
                   disabled={isDemoSubmitting}
-                  className={`p-2 rounded text-xs font-bold transition border flex flex-col items-center justify-center gap-1 ${
+                  className={`p-3 rounded-lg text-xs font-bold transition border flex flex-col items-center justify-center gap-1 min-h-[58px] active:scale-95 ${
                     b.state
-                      ? "bg-[#140b12] border-rose-500 text-[#ff0055] shadow-[0_0_10px_rgba(255,0,85,0.3)]"
+                      ? "bg-[#140b12] border-rose-500 text-[#ff0055] shadow-[0_0_12px_rgba(255,0,85,0.3)]"
                       : "bg-[#0b1411] border-slate-800 text-slate-300 hover:border-emerald-500/50 hover:text-[#00ff9d]"
                   }`}
                 >
                   <span className="text-[10px] text-slate-400">{b.label}</span>
-                  <span>{b.state ? "OCCUPIED" : "VACANT"}</span>
+                  <span className="text-[11px] font-black">{b.state ? "OCCUPIED" : "VACANT"}</span>
                 </button>
               ))}
             </div>
 
-            {/* Gate Cycle & Reset */}
-            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-800">
+            {/* Gate Cycle & Reset (Touch-friendly >= 48px) */}
+            <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-800">
               <button
                 onClick={() => {
                   const nextGate: Record<string, string> = {
@@ -763,7 +773,7 @@ export default function Dashboard() {
                   sendDemoUpdate({ gate: nextGate[gateStatus] || "IDLE" });
                 }}
                 disabled={isDemoSubmitting}
-                className="flex-1 py-1.5 px-3 rounded text-xs font-bold bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-900 transition flex items-center justify-center gap-1.5"
+                className="flex-1 py-3 px-3 rounded-lg text-xs font-black bg-cyan-950 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-900 active:scale-95 transition flex items-center justify-center gap-1.5 min-h-[48px]"
               >
                 <span>CYCLE BARRIER:</span>
                 <span className="text-white font-black">{gateStatus}</span>
@@ -773,23 +783,67 @@ export default function Dashboard() {
                 onClick={() => sendDemoUpdate({ s1: false, s2: false, s3: false, gate: "IDLE" })}
                 disabled={isDemoSubmitting}
                 title="Reset all bays"
-                className="py-1.5 px-2.5 rounded text-xs text-slate-400 bg-slate-900 border border-slate-800 hover:text-white hover:border-slate-600 transition flex items-center gap-1"
+                className="py-3 px-3.5 rounded-lg text-xs font-bold text-slate-400 bg-slate-900 border border-slate-800 hover:text-white hover:border-slate-600 active:scale-95 transition flex items-center gap-1 min-h-[48px]"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
+                <RotateCcw className="w-4 h-4" />
                 <span>RESET</span>
               </button>
             </div>
           </div>
-        ) : (
-          <button
-            onClick={() => setIsDebugPanelOpen(true)}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-bold bg-[#0c101d] border border-cyan-500/50 text-cyan-300 shadow-xl hover:bg-cyan-950 transition"
-          >
-            <Sliders className="w-4 h-4 text-cyan-400" />
-            <span>OPEN HARDWARE SIMULATOR</span>
-          </button>
-        )}
-      </aside>
+        </div>
+      )}
+
+      {/* 7. HARDWARE INFO POPUP MODAL */}
+      {isInfoModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-[#0c101d] border border-cyan-500/40 p-5 rounded-2xl shadow-2xl max-w-sm w-full">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Cpu className="w-4 h-4 text-cyan-400" />
+                <span className="text-sm font-bold text-white uppercase tracking-wider">HARDWARE SPECS</span>
+              </div>
+              <button
+                onClick={() => setIsInfoModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="mt-3 space-y-2 text-xs text-slate-300 font-mono">
+              <div className="flex justify-between py-1 border-b border-slate-800/60">
+                <span className="text-slate-500">MICROCONTROLLER:</span>
+                <span className="text-slate-200 font-bold">ESP32-WROOM-32D</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-800/60">
+                <span className="text-slate-500">PROXIMITY ARRAY:</span>
+                <span className="text-slate-200">3x IR Obstacle Sensors</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-800/60">
+                <span className="text-slate-500">ACTUATOR:</span>
+                <span className="text-slate-200">SG90 9g Micro Servo</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-800/60">
+                <span className="text-slate-500">COMM PROTOCOL:</span>
+                <span className="text-cyan-400">HTTP REST (JSON)</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-800/60">
+                <span className="text-slate-500">WATCHDOG TIMEOUT:</span>
+                <span className="text-amber-400">10 Seconds</span>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-800 flex justify-end">
+              <button
+                onClick={() => setIsInfoModalOpen(false)}
+                className="px-4 py-2 rounded bg-cyan-950 border border-cyan-500/40 text-cyan-300 text-xs font-bold hover:bg-cyan-900 transition"
+              >
+                CLOSE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
