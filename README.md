@@ -37,13 +37,13 @@ npx vercel --prod
 
 ### Option 2: Push to GitHub & 1-Click Deploy
 
-1. Create a repository on GitHub (e.g. `smart-parking-dashboard`):
+1. Create a repository on GitHub (under `pra-labs`):
    ```bash
    cd smart-parking-dashboard
    git add .
    git commit -m "feat: complete ESP32 smart parking dashboard with live API and demo controls"
    git branch -M main
-   git remote add origin https://github.com/<your-username>/smart-parking-dashboard.git
+   git remote add origin https://github.com/pra-labs/smart-parking-dashboard.git
    git push -u origin main
    ```
 2. Go to [vercel.com/new](https://vercel.com/new) and import the repository.
