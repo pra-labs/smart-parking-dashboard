@@ -58,6 +58,7 @@ interface LogEntry {
 }
 
 export default function Dashboard() {
+  const [mounted, setMounted] = useState(false);
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastPacketTime, setLastPacketTime] = useState<string>("Waiting for stream...");
@@ -81,8 +82,15 @@ export default function Dashboard() {
   const [logFilter, setLogFilter] = useState<"ALL" | "POST" | "WARN" | "ERROR">("ALL");
 
   const [eventLogs, setEventLogs] = useState<LogEntry[]>([
-    { id: "1", time: new Date().toLocaleTimeString(), msg: "Dashboard initialized. Ready for ESP32 telemetry packets.", type: "info" },
+    { id: "1", time: "--:--:--", msg: "Dashboard initialized. Ready for ESP32 telemetry packets.", type: "info" },
   ]);
+
+  useEffect(() => {
+    setMounted(true);
+    setEventLogs([
+      { id: "1", time: new Date().toLocaleTimeString(), msg: "Dashboard initialized. Ready for ESP32 telemetry packets.", type: "info" },
+    ]);
+  }, []);
 
   const addLog = useCallback((msg: string, type: "info" | "warn" | "error" | "post" = "info") => {
     const time = new Date().toLocaleTimeString();
@@ -329,7 +337,9 @@ export default function Dashboard() {
                 <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1 mt-0.5">
                   <Clock className="w-3 h-3 text-slate-500" />
                   <span>Last packet: </span>
-                  <span className="text-slate-200 font-semibold">{lastPacketTime}</span>
+                  <span className="text-slate-200 font-semibold" suppressHydrationWarning>
+                    {lastPacketTime}
+                  </span>
                 </div>
               </div>
 
@@ -745,7 +755,9 @@ export default function Dashboard() {
                 ) : (
                   filteredLogs.map((log) => (
                     <div key={log.id} className="flex items-start gap-2 py-0.5 text-slate-300">
-                      <span className="text-slate-500 whitespace-nowrap">[{log.time}]</span>
+                      <span className="text-slate-500 whitespace-nowrap" suppressHydrationWarning>
+                        [{log.time}]
+                      </span>
                       <span
                         className={
                           log.type === "error"
