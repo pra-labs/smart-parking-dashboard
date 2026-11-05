@@ -1,75 +1,92 @@
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&family=Rajdhani:wght@500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --background: #06080e;
-  --foreground: #f1f5f9;
-  --brand-cyan: #06b6d4;
-  --brand-emerald: #10b981;
-  --brand-rose: #f43f5e;
-  --brand-amber: #f59e0b;
+  --background: #07090e;
+  --foreground: #e2e8f0;
 }
 
 body {
   background-color: var(--background);
   color: var(--foreground);
-  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  font-family: 'Share Tech Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   overflow-x: hidden;
 }
 
-/* Glassmorphism panels */
-.glass-panel {
-  background: rgba(13, 17, 28, 0.7);
+h1, h2, h3, .font-orbitron {
+  font-family: 'Orbitron', 'Rajdhani', sans-serif;
+}
+
+/* Cyberpunk Clip-Path Angles for Cards */
+.cyber-panel {
+  background: rgba(12, 16, 28, 0.75);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
+  clip-path: polygon(
+    0 12px,
+    12px 0,
+    calc(100% - 12px) 0,
+    100% 12px,
+    100% calc(100% - 12px),
+    calc(100% - 12px) 100%,
+    12px 100%,
+    0 calc(100% - 12px)
+  );
 }
 
-.glass-panel-elevated {
-  background: rgba(17, 24, 39, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+.cyber-panel-border-cyan {
+  border: 1px solid rgba(0, 240, 255, 0.35);
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.12), inset 0 0 15px rgba(0, 240, 255, 0.05);
 }
 
-/* Glowing pulse effects */
-@keyframes pulseGlowEmerald {
-  0%, 100% {
-    box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.35), inset 0 0 15px rgba(16, 185, 129, 0.1);
-  }
-  50% {
-    box-shadow: 0 0 45px 0px rgba(16, 185, 129, 0.55), inset 0 0 25px rgba(16, 185, 129, 0.2);
-  }
+.cyber-panel-border-emerald {
+  border: 1px solid rgba(0, 255, 157, 0.45);
+  box-shadow: 0 0 25px rgba(0, 255, 157, 0.2), inset 0 0 15px rgba(0, 255, 157, 0.08);
 }
 
-@keyframes pulseGlowRose {
-  0%, 100% {
-    box-shadow: 0 0 25px -5px rgba(244, 63, 94, 0.4), inset 0 0 15px rgba(244, 63, 94, 0.1);
-  }
-  50% {
-    box-shadow: 0 0 45px 0px rgba(244, 63, 94, 0.6), inset 0 0 25px rgba(244, 63, 94, 0.25);
-  }
+.cyber-panel-border-rose {
+  border: 1px solid rgba(255, 0, 85, 0.45);
+  box-shadow: 0 0 25px rgba(255, 0, 85, 0.25), inset 0 0 15px rgba(255, 0, 85, 0.08);
 }
 
-.glow-emerald {
-  animation: pulseGlowEmerald 3s infinite ease-in-out;
+/* CRT Terminal Scanlines */
+.crt-scanlines {
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%, 
+    rgba(0, 0, 0, 0.3) 50%
+  ), linear-gradient(
+    90deg,
+    rgba(255, 0, 0, 0.03),
+    rgba(0, 255, 0, 0.01),
+    rgba(0, 0, 255, 0.03)
+  );
+  background-size: 100% 3px, 6px 100%;
 }
 
-.glow-rose {
-  animation: pulseGlowRose 3s infinite ease-in-out;
+/* Hologram Grid Floor */
+.holo-grid {
+  background-image: 
+    linear-gradient(to right, rgba(0, 240, 255, 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 240, 255, 0.1) 1px, transparent 1px);
+  background-size: 20px 20px;
 }
 
-/* Custom scrollbars */
+/* Custom Scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #06080e;
+  background: #07090e;
 }
 ::-webkit-scrollbar-thumb {
   background: #1e293b;
-  border-radius: 4px;
+  border-radius: 2px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #00f0ff;
 }

@@ -22,7 +22,6 @@ import {
   Terminal,
   ChevronDown,
   ChevronUp,
-  Filter,
   X,
   RotateCcw,
   Zap,
@@ -58,14 +57,11 @@ interface LogEntry {
 }
 
 export default function Dashboard() {
-  const [mounted, setMounted] = useState(false);
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [lastPacketTime, setLastPacketTime] = useState<string>("Waiting for stream...");
+  const [lastPacketTime, setLastPacketTime] = useState<string>("WAITING FOR STREAM");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isDemoSubmitting, setIsDemoSubmitting] = useState(false);
-  
-  // Heartbeat pulse flash state
   const [packetBeat, setPacketBeat] = useState(false);
 
   // Debug registers expanded state per bay
@@ -82,13 +78,12 @@ export default function Dashboard() {
   const [logFilter, setLogFilter] = useState<"ALL" | "POST" | "WARN" | "ERROR">("ALL");
 
   const [eventLogs, setEventLogs] = useState<LogEntry[]>([
-    { id: "1", time: "--:--:--", msg: "Dashboard initialized. Ready for ESP32 telemetry packets.", type: "info" },
+    { id: "1", time: "--:--:--", msg: "SYS_INIT // MISSION CONTROL ONLINE. WAITING FOR ESP32 STREAM.", type: "info" },
   ]);
 
   useEffect(() => {
-    setMounted(true);
     setEventLogs([
-      { id: "1", time: new Date().toLocaleTimeString(), msg: "Dashboard initialized. Ready for ESP32 telemetry packets.", type: "info" },
+      { id: "1", time: new Date().toLocaleTimeString(), msg: "SYS_INIT // MISSION CONTROL ONLINE. WAITING FOR ESP32 STREAM.", type: "info" },
     ]);
   }, []);
 
@@ -115,39 +110,36 @@ export default function Dashboard() {
 
         setData((prev) => {
           if (prev) {
-            // Check for occupancy changes
             if (prev.slots.s1 !== json.slots.s1) {
-              addLog(`Slot 01: changed to ${json.slots.s1 ? "OCCUPIED" : "VACANT"}`, json.slots.s1 ? "warn" : "info");
+              addLog(`IR_GPIO_13 // BAY_01: ${json.slots.s1 ? "TRIG_OCCUPIED" : "TRIG_CLEAR"}`, json.slots.s1 ? "warn" : "info");
             }
             if (prev.slots.s2 !== json.slots.s2) {
-              addLog(`Slot 02: changed to ${json.slots.s2 ? "OCCUPIED" : "VACANT"}`, json.slots.s2 ? "warn" : "info");
+              addLog(`IR_GPIO_14 // BAY_02: ${json.slots.s2 ? "TRIG_OCCUPIED" : "TRIG_CLEAR"}`, json.slots.s2 ? "warn" : "info");
             }
             if (prev.slots.s3 !== json.slots.s3) {
-              addLog(`Slot 03: changed to ${json.slots.s3 ? "OCCUPIED" : "VACANT"}`, json.slots.s3 ? "warn" : "info");
+              addLog(`IR_GPIO_27 // BAY_03: ${json.slots.s3 ? "TRIG_OCCUPIED" : "TRIG_CLEAR"}`, json.slots.s3 ? "warn" : "info");
             }
             if (prev.gate !== json.gate) {
-              addLog(`Gate Barrier: switched servo angle to [${json.gate}]`, "post");
+              addLog(`SERVO_SG90 // BARRIER ROTATION: [${json.gate}]`, "post");
             }
-            // Check connectivity drop
             if (prev.device.online && !json.device.online) {
-              addLog("ESP32 Heartbeat lost (>10s ping timeout). Marked OFFLINE.", "error");
+              addLog("WARN // HEARTBEAT TIMEOUT (>10s). ESP32 LINK OFFLINE.", "error");
             } else if (!prev.device.online && json.device.online) {
-              addLog("ESP32 Heartbeat restored. Marked ONLINE.", "info");
+              addLog("LINK_RESTORED // ESP32 HEARTBEAT RESUMED.", "info");
             }
           }
           return json;
         });
       }
     } catch (err) {
-      console.error("Failed to fetch parking status:", err);
-      addLog("Stream fetch failure: connection refused.", "error");
+      console.error("Stream fetch failure:", err);
+      addLog("ERR // CONNECTION REFUSED ON TELEMETRY BUS.", "error");
     } finally {
       setLoading(false);
       if (manual) setIsRefreshing(false);
     }
   }, [addLog]);
 
-  // Polling every 1 second
   useEffect(() => {
     fetchParkingData();
     const interval = setInterval(() => {
@@ -156,7 +148,7 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [fetchParkingData]);
 
-  // Hardware Simulation Controls
+  // Demo Controls
   const sendDemoUpdate = async (overrides: Partial<{ s1: boolean; s2: boolean; s3: boolean; gate: string }>) => {
     setIsDemoSubmitting(true);
     try {
@@ -170,7 +162,7 @@ export default function Dashboard() {
         gate: overrides.gate !== undefined ? overrides.gate : currentGate,
       };
 
-      addLog(`Simulator trigger: POST /api/parking -> ${JSON.stringify(payload)}`, "post");
+      addLog(`TX_SIM // INJECT PACKET: ${JSON.stringify(payload)}`, "post");
 
       await fetch("/api/parking", {
         method: "POST",
@@ -179,8 +171,8 @@ export default function Dashboard() {
       });
       await fetchParkingData();
     } catch (err) {
-      console.error("Demo trigger failed:", err);
-      addLog("Simulator injection error.", "error");
+      console.error("Simulation injection failure:", err);
+      addLog("ERR // SIMULATION PACKET DROPPED.", "error");
     } finally {
       setIsDemoSubmitting(false);
     }
@@ -211,47 +203,43 @@ export default function Dashboard() {
     switch (status) {
       case "OPEN":
         return {
-          title: "BARRIER RAISED",
-          desc: "Entry gate open &bull; Vehicle passage cleared",
-          badge: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
-          accent: "text-emerald-400",
-          barrierAngle: "-rotate-60",
-          servoDegrees: "90°",
-          statusColor: "emerald",
-          icon: <CheckCircle2 className="w-5 h-5 text-emerald-400" />,
+          title: "BARRIER RAISED // ACCESS GRANTED",
+          desc: "Servo at 90° &bull; Vehicle passage cleared",
+          badge: "bg-emerald-500/20 text-[#00ff9d] border-emerald-500/40",
+          accent: "text-[#00ff9d]",
+          angleDeg: 90,
+          gaugePercent: 100,
+          icon: <CheckCircle2 className="w-5 h-5 text-[#00ff9d]" />,
         };
       case "CLOSED":
         return {
-          title: "BARRIER LOWERED",
-          desc: "Entry gate down &bull; Sensor scanning for vehicle",
-          badge: "bg-amber-500/10 text-amber-300 border-amber-500/30",
-          accent: "text-amber-400",
-          barrierAngle: "rotate-0",
-          servoDegrees: "0° (LOCKED)",
-          statusColor: "amber",
-          icon: <Shield className="w-5 h-5 text-amber-400" />,
+          title: "BARRIER LOWERED // SECURED",
+          desc: "Servo at 0° &bull; Ultrasonic scan active",
+          badge: "bg-amber-500/20 text-[#ffb703] border-amber-500/40",
+          accent: "text-[#ffb703]",
+          angleDeg: 0,
+          gaugePercent: 10,
+          icon: <Shield className="w-5 h-5 text-[#ffb703]" />,
         };
       case "FULL":
         return {
-          title: "LOT FULL (BLOCKED)",
-          desc: "Capacity reached &bull; Servo locked down",
-          badge: "bg-rose-500/10 text-rose-300 border-rose-500/30",
-          accent: "text-rose-400",
-          barrierAngle: "rotate-0",
-          servoDegrees: "0° (INHIBIT)",
-          statusColor: "rose",
-          icon: <AlertTriangle className="w-5 h-5 text-rose-400" />,
+          title: "LOT FULL // ACCESS DENIED",
+          desc: "Capacity maximum &bull; Barrier interlock engaged",
+          badge: "bg-rose-500/20 text-[#ff0055] border-rose-500/40",
+          accent: "text-[#ff0055]",
+          angleDeg: 0,
+          gaugePercent: 0,
+          icon: <AlertTriangle className="w-5 h-5 text-[#ff0055]" />,
         };
       default:
         return {
-          title: "STANDBY / IDLE",
-          desc: "Servo motor standby &bull; Ultrasonic loop ready",
-          badge: "bg-cyan-500/10 text-cyan-300 border-cyan-500/30",
-          accent: "text-cyan-400",
-          barrierAngle: "-rotate-12",
-          servoDegrees: "15°",
-          statusColor: "cyan",
-          icon: <Activity className="w-5 h-5 text-cyan-400" />,
+          title: "STANDBY // READY LOOP",
+          desc: "Servo calibrated &bull; Inbound radar waiting",
+          badge: "bg-cyan-500/20 text-[#00f0ff] border-cyan-500/40",
+          accent: "text-[#00f0ff]",
+          angleDeg: 15,
+          gaugePercent: 20,
+          icon: <Activity className="w-5 h-5 text-[#00f0ff]" />,
         };
     }
   };
@@ -259,378 +247,316 @@ export default function Dashboard() {
   const gateInfo = getGateConfig(gateStatus);
 
   return (
-    <div className="min-h-screen bg-[#06080e] text-slate-100 flex flex-col relative selection:bg-cyan-500 selection:text-black">
-      {/* Background Subtle Ambience & Radial Mesh */}
-      <div className="fixed inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(6,182,212,0.12),rgba(255,255,255,0))] pointer-events-none" />
-      <div className="fixed inset-0 bg-[linear-gradient(to_right,#1e293b12_1px,transparent_1px),linear-gradient(to_bottom,#1e293b12_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_75%_50%_at_50%_0%,#000_70%,transparent_100%)] pointer-events-none" />
+    <div className="min-h-screen bg-[#07090e] text-slate-200 font-mono flex flex-col relative selection:bg-cyan-400 selection:text-black">
+      
+      {/* Background Deep Space Overlay Grid */}
+      <div className="fixed inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px] opacity-60 pointer-events-none" />
+      <div className="fixed inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(0,240,255,0.1),transparent)] pointer-events-none" />
 
-      {/* Main Content Area */}
+      {/* Main HUD Container */}
       <div className="relative z-10 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 pb-28 flex-1 flex flex-col gap-6">
         
-        {/* 1. TOP HEADER & CONNECTION HEALTH INDICATORS */}
-        <header className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-6 border-b border-white/[0.08]">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2.5">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-medium tracking-wide uppercase bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
-                <Cpu className="w-3 h-3 animate-spin text-cyan-400" style={{ animationDuration: "6s" }} />
-                PraLabs Engineering Studio
-              </span>
-              <span className="text-[11px] font-mono text-slate-500 flex items-center gap-1">
-                <Radio className="w-3 h-3 text-emerald-400" />
-                IoT Subsystem v2.5
-              </span>
-            </div>
-
-            <div className="flex items-baseline gap-3">
-              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white flex items-center gap-3">
-                Smart Parking Telemetry
+        {/* 1. HUD TOP BAR (MISSION CONTROL HEADER) */}
+        <header className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-5 border-b border-cyan-500/30">
+          <div>
+            <div className="flex items-center gap-3">
+              <span className={`h-3 w-3 rounded-full transition-all duration-300 ${
+                isOnline
+                  ? packetBeat
+                    ? "bg-[#00f0ff] scale-125 shadow-[0_0_15px_#00f0ff]"
+                    : "bg-[#00ff9d] shadow-[0_0_10px_#00ff9d]"
+                  : "bg-[#ff0055] shadow-[0_0_10px_#ff0055]"
+              }`} />
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-[#00f0ff] via-teal-300 to-[#00ff9d] uppercase">
+                PRALABS // PARKING HUD v2.5
               </h1>
             </div>
-            <p className="text-xs sm:text-sm text-slate-400 max-w-xl">
-              Microsecond bay proximity sensors, servo barrier synchronization, and edge telemetry health monitoring.
+            <p className="text-xs text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
+              <span>EDGE TELEMETRY</span>
+              <span className="text-cyan-500">&bull;</span>
+              <span>SUB-MILLISECOND IR MESH</span>
+              <span className="text-cyan-500">&bull;</span>
+              <span className="text-slate-300">NODE: ESP32-WROOM</span>
+              <span className="text-cyan-500">&bull;</span>
+              <span className="text-cyan-400">FREQ: 2.4GHz Wi-Fi / ESP-NOW</span>
             </p>
           </div>
 
-          {/* Connection Pill & Last Seen Timestamp */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-            
-            {/* Heartbeat Status Box */}
-            <div className="flex items-center gap-3 bg-slate-900/90 border border-white/10 px-3.5 py-2 rounded-xl backdrop-blur-xl shadow-lg">
-              
-              {/* Dynamic Beating LED Status Dot */}
-              <div className="relative flex items-center justify-center">
-                <span
-                  className={`w-3.5 h-3.5 rounded-full transition-transform duration-200 ${
-                    isOnline
-                      ? packetBeat
-                        ? "bg-emerald-400 scale-125 shadow-[0_0_15px_#10b981]"
-                        : "bg-emerald-500 shadow-[0_0_8px_#10b981]"
-                      : packetBeat
-                      ? "bg-rose-400 scale-125 shadow-[0_0_15px_#f43f5e]"
-                      : "bg-rose-500 shadow-[0_0_8px_#f43f5e]"
-                  }`}
-                />
-                <span
-                  className={`absolute w-5 h-5 rounded-full animate-ping opacity-40 ${
-                    isOnline ? "bg-emerald-400" : "bg-rose-500"
-                  }`}
-                />
+          {/* Telemetry Link Status Box */}
+          <div className="flex items-center gap-3 bg-[#0c101d] border border-cyan-500/40 px-4 py-2.5 rounded shadow-[0_0_15px_rgba(0,240,255,0.15)]">
+            <div className="text-right">
+              <div className="text-[10px] text-slate-400 tracking-wider">TELEMETRY LINK</div>
+              <div className="text-xs font-bold flex items-center gap-1.5 justify-end">
+                {isOnline ? (
+                  <>
+                    <Wifi className="w-3.5 h-3.5 text-[#00ff9d]" />
+                    <span className="text-[#00ff9d]">ONLINE // 10ms</span>
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="w-3.5 h-3.5 text-[#ff0055]" />
+                    <span className="text-[#ff0055]">OFFLINE (&gt;10s)</span>
+                  </>
+                )}
               </div>
-
-              {/* Status Text & Connectivity Info */}
-              <div className="flex flex-col">
-                <div className="flex items-center gap-1.5 text-xs font-mono font-bold tracking-wider">
-                  {isOnline ? (
-                    <>
-                      <Wifi className="w-3.5 h-3.5 text-emerald-400" />
-                      <span className="text-emerald-300">ESP32 ONLINE</span>
-                    </>
-                  ) : (
-                    <>
-                      <WifiOff className="w-3.5 h-3.5 text-rose-400" />
-                      <span className="text-rose-400">ESP32 OFFLINE</span>
-                    </>
-                  )}
-                </div>
-                
-                {/* Last Packet Exact Timestamp */}
-                <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1 mt-0.5">
-                  <Clock className="w-3 h-3 text-slate-500" />
-                  <span>Last packet: </span>
-                  <span className="text-slate-200 font-semibold" suppressHydrationWarning>
-                    {lastPacketTime}
-                  </span>
-                </div>
+              <div className="text-[10px] text-slate-500 flex items-center gap-1 justify-end mt-0.5">
+                <Clock className="w-3 h-3 text-cyan-400" />
+                <span>LAST PKT: </span>
+                <span className="text-slate-300 font-bold" suppressHydrationWarning>{lastPacketTime}</span>
               </div>
-
-              {/* Manual Stream Refresh Button */}
-              <button
-                onClick={() => fetchParkingData(true)}
-                title="Immediate stream poll"
-                disabled={isRefreshing}
-                className="ml-1 p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-cyan-400" : ""}`} />
-              </button>
             </div>
+
+            <div className="relative flex items-center justify-center pl-2 border-l border-slate-800">
+              <span
+                className={`w-3.5 h-3.5 rounded-full ${
+                  isOnline ? "bg-[#00ff9d] shadow-[0_0_10px_#00ff9d]" : "bg-[#ff0055] shadow-[0_0_10px_#ff0055]"
+                }`}
+              />
+              <span
+                className={`absolute w-5 h-5 rounded-full animate-ping opacity-40 ${
+                  isOnline ? "bg-[#00ff9d]" : "bg-[#ff0055]"
+                }`}
+              />
+            </div>
+
+            <button
+              onClick={() => fetchParkingData(true)}
+              title="Manual Telemetry Poll"
+              disabled={isRefreshing}
+              className="ml-2 p-1.5 rounded bg-slate-900 border border-cyan-500/30 text-cyan-400 hover:text-white hover:border-cyan-400 transition"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+            </button>
           </div>
         </header>
 
-        {/* 2. METRICS HUD OVERVIEW */}
+        {/* 2. HUD STAT METRICS BAR */}
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           
           {/* Facility Capacity */}
-          <div className="glass-panel rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between group">
-            <div className="flex items-center justify-between text-slate-400">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
-                Facility Capacity
-              </span>
-              <Layers className="w-4 h-4 text-slate-500 group-hover:text-slate-300 transition" />
+          <div className="relative bg-[#0c101d] border border-cyan-500/30 p-4 rounded shadow-[0_0_15px_rgba(0,240,255,0.08)]">
+            <div className="flex justify-between items-center text-slate-400 text-xs">
+              <span className="tracking-wider">SECTOR CAPACITY</span>
+              <span className="text-[10px] text-cyan-400 bg-cyan-950/80 border border-cyan-800 px-1.5 py-0.5 rounded">Z-01</span>
             </div>
-            <div className="mt-3 flex items-baseline justify-between">
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-4xl font-black font-mono text-white">3</span>
-                <span className="text-xs font-mono text-slate-500">Bays</span>
-              </div>
-              <span className="text-[11px] font-mono text-cyan-400 bg-cyan-950/60 border border-cyan-800/60 px-2 py-0.5 rounded">
-                Zone Alpha
-              </span>
+            <div className="text-3xl font-black text-white my-1">
+              3 <span className="text-xs text-slate-500 font-normal">TOTAL BAYS</span>
             </div>
-            <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between text-[11px] font-mono text-slate-400">
-              <span>Sensor Protocol</span>
-              <span className="text-white font-bold">Active IR Beam</span>
+            <div className="text-[11px] text-slate-400 pt-2 border-t border-slate-800/80 flex justify-between">
+              <span>HARDWARE:</span>
+              <span className="text-slate-200">3x INFRARED ARRAY</span>
             </div>
           </div>
 
-          {/* Available Bays (Soft Green Glow) */}
-          <div className="glass-panel-elevated rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between border-emerald-500/40 shadow-[0_0_30px_rgba(16,185,129,0.08)]">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-emerald-400 flex items-center gap-1.5 font-bold">
-                <CircleDot className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                Vacant Spaces
+          {/* Vacant Bays (Emerald Green) */}
+          <div className="relative bg-[#0c101d] border border-emerald-500/40 p-4 rounded shadow-[0_0_20px_rgba(0,255,157,0.12)]">
+            <div className="flex justify-between items-center text-emerald-400 text-xs font-bold">
+              <span className="flex items-center gap-1.5">
+                <CircleDot className="w-3.5 h-3.5 animate-pulse" />
+                VACANT SLOTS
               </span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Live Open
-              </span>
+              <span className="text-[10px] bg-emerald-500/20 text-[#00ff9d] border border-emerald-500/40 px-1.5 py-0.5 rounded">FREE</span>
             </div>
-            <div className="mt-3 flex items-baseline justify-between">
-              <span className="text-5xl font-black font-mono text-emerald-400 drop-shadow-[0_0_15px_rgba(16,185,129,0.4)]">
-                {loading ? "..." : freeSlots}
-              </span>
-              <span className="text-xs font-mono text-emerald-400/90 font-semibold">
-                Available Now
-              </span>
+            <div className="text-4xl font-black text-[#00ff9d] my-1 drop-shadow-[0_0_12px_rgba(0,255,157,0.4)]">
+              {loading ? "..." : freeSlots}
             </div>
-            <div className="mt-4 pt-3 border-t border-emerald-500/20">
-              <div className="w-full bg-slate-800/90 h-1.5 rounded-full overflow-hidden">
-                <div
-                  className="bg-emerald-400 h-full transition-all duration-700 rounded-full shadow-[0_0_10px_#10b981]"
-                  style={{ width: `${(freeSlots / 3) * 100}%` }}
-                />
-              </div>
+            <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-2">
+              <div
+                className="bg-[#00ff9d] h-full transition-all duration-700 shadow-[0_0_8px_#00ff9d]"
+                style={{ width: `${(freeSlots / 3) * 100}%` }}
+              />
             </div>
           </div>
 
-          {/* Occupied Bays (Soft Red / Amber Glow) */}
-          <div className="glass-panel-elevated rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between border-rose-500/30 shadow-[0_0_30px_rgba(244,63,94,0.06)]">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/10 rounded-full blur-2xl pointer-events-none" />
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-rose-400 flex items-center gap-1.5 font-bold">
-                <Car className="w-3.5 h-3.5 text-rose-400" />
-                Occupied Spaces
+          {/* Occupied Bays (Crimson Red) */}
+          <div className="relative bg-[#0c101d] border border-rose-500/40 p-4 rounded shadow-[0_0_20px_rgba(255,0,85,0.12)]">
+            <div className="flex justify-between items-center text-rose-400 text-xs font-bold">
+              <span className="flex items-center gap-1.5">
+                <Car className="w-3.5 h-3.5" />
+                OCCUPIED SLOTS
               </span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                {occupancyRate}% Density
-              </span>
+              <span className="text-[10px] bg-rose-500/20 text-[#ff0055] border border-rose-500/40 px-1.5 py-0.5 rounded">{occupancyRate}% DENSITY</span>
             </div>
-            <div className="mt-3 flex items-baseline justify-between">
-              <span className="text-5xl font-black font-mono text-rose-400 drop-shadow-[0_0_15px_rgba(244,63,94,0.3)]">
-                {loading ? "..." : occupiedSlots}
-              </span>
-              <span className="text-xs font-mono text-rose-400/80 font-semibold">
-                Vehicles Parked
-              </span>
+            <div className="text-4xl font-black text-[#ff0055] my-1 drop-shadow-[0_0_12px_rgba(255,0,85,0.4)]">
+              {loading ? "..." : occupiedSlots}
             </div>
-            <div className="mt-4 pt-3 border-t border-rose-500/20">
-              <div className="w-full bg-slate-800/90 h-1.5 rounded-full overflow-hidden">
-                <div
-                  className="bg-rose-500 h-full transition-all duration-700 rounded-full shadow-[0_0_10px_#f43f5e]"
-                  style={{ width: `${(occupiedSlots / 3) * 100}%` }}
-                />
-              </div>
+            <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-2">
+              <div
+                className="bg-[#ff0055] h-full transition-all duration-700 shadow-[0_0_8px_#ff0055]"
+                style={{ width: `${(occupiedSlots / 3) * 100}%` }}
+              />
             </div>
           </div>
 
-          {/* Barrier Gate Telemetry Metric */}
-          <div className="glass-panel rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between">
-            <div className="flex items-center justify-between text-slate-400">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <ArrowRightLeft className="w-3.5 h-3.5 text-cyan-400" />
-                Gate Barrier
+          {/* Barrier Gate Status */}
+          <div className="relative bg-[#0c101d] border border-cyan-500/30 p-4 rounded shadow-[0_0_15px_rgba(0,240,255,0.08)]">
+            <div className="flex justify-between items-center text-slate-400 text-xs">
+              <span className="flex items-center gap-1.5">
+                <ArrowRightLeft className="w-3.5 h-3.5 text-[#00f0ff]" />
+                SERVO BARRIER
               </span>
-              <span className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase font-semibold ${gateInfo.badge}`}>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded border uppercase font-bold ${gateInfo.badge}`}>
                 {gateStatus}
               </span>
             </div>
-            <div className="mt-2">
-              <div className={`text-base font-bold tracking-tight ${gateInfo.accent}`}>
-                {gateInfo.title}
-              </div>
-              <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
-                {gateInfo.desc}
-              </p>
+            <div className={`text-base font-bold my-1 tracking-tight ${gateInfo.accent}`}>
+              {gateInfo.title}
             </div>
-            <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between text-[11px] font-mono text-slate-400">
-              <span>Servo Angle</span>
-              <span className={`font-semibold ${gateInfo.accent}`}>{gateInfo.servoDegrees}</span>
+            <div className="text-[11px] text-slate-400 pt-2 border-t border-slate-800/80 flex justify-between">
+              <span>SERVO DEGREE:</span>
+              <span className={`font-bold ${gateInfo.accent}`}>{gateInfo.angleDeg}°</span>
             </div>
           </div>
         </section>
 
-        {/* 3. PARKING BAYS MATRIX & BARRIER ARM GRAPHIC */}
+        {/* 3. DIGITAL TWIN PARKING BAYS + RADIAL GAUGE + CRT LOGS */}
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* 3 DISTINCT PARKING BAY CARDS (2 Cols) */}
-          <div className="lg:col-span-2 glass-panel rounded-2xl p-6 relative flex flex-col justify-between">
+          {/* DIGITAL TWIN BAYS (2 Cols) */}
+          <div className="lg:col-span-2 bg-[#0c101d] border border-cyan-500/30 p-6 rounded shadow-[0_0_20px_rgba(0,240,255,0.08)] flex flex-col justify-between">
             
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-5 border-b border-white/[0.08]">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-4 border-b border-slate-800">
               <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-white tracking-tight">
-                    Bay Occupancy Matrix
-                  </h2>
-                  <span className="text-[11px] font-mono text-cyan-400 bg-cyan-950/80 border border-cyan-800/80 px-2 py-0.5 rounded">
-                    Zone 01
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Color-coded sensor cards with collapsible IoT hardware registers
-                </p>
+                <h2 className="text-base sm:text-lg font-bold text-white tracking-widest uppercase flex items-center gap-2">
+                  <span>DIGITAL TWIN // BAY MATRIX</span>
+                  <span className="text-[10px] text-cyan-400 bg-cyan-950 border border-cyan-800 px-2 py-0.5 rounded">REALTIME</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">Top-down isometric bay status with live proximity telemetry</p>
               </div>
 
-              {/* Status Indicators */}
-              <div className="flex items-center gap-3 text-xs font-mono">
+              {/* Status Legend */}
+              <div className="flex items-center gap-3 text-xs">
                 <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981]" />
-                  <span className="text-slate-300">Available Bay</span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#00ff9d] shadow-[0_0_8px_#00ff9d]" />
+                  <span className="text-slate-300">VACANT</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e]" />
-                  <span className="text-slate-300">Occupied Bay</span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#ff0055] shadow-[0_0_8px_#ff0055]" />
+                  <span className="text-slate-300">OCCUPIED</span>
                 </div>
               </div>
             </div>
 
-            {/* Driveway Guide Banner */}
-            <div className="my-5 rounded-xl bg-[#090d18] border border-dashed border-slate-700/60 p-3 text-center text-xs text-slate-400 font-mono flex items-center justify-between px-6">
-              <span className="flex items-center gap-1.5 text-cyan-400 font-semibold">
-                <ArrowRightLeft className="w-3.5 h-3.5" />
-                <span>ENTRY LANE</span>
-              </span>
+            {/* Inbound Road Graphics */}
+            <div className="my-5 rounded bg-[#07090e] border border-dashed border-slate-700/80 p-2.5 text-center text-xs text-slate-400 flex items-center justify-between px-6">
+              <span className="text-cyan-400 font-bold">&gt;&gt; INBOUND ACCESS</span>
               <div className="flex items-center gap-3">
-                <span className="h-0.5 w-10 bg-amber-400/50" />
-                <span className="text-[11px] tracking-widest text-slate-400 font-bold uppercase">
-                  ACTIVE DRIVEWAY
-                </span>
-                <span className="h-0.5 w-10 bg-amber-400/50" />
+                <span className="h-0.5 w-8 bg-amber-400/50" />
+                <span className="tracking-widest uppercase text-slate-300 text-[11px] font-bold">DRIVEWAY LANE // 10 KM/H</span>
+                <span className="h-0.5 w-8 bg-amber-400/50" />
               </div>
-              <span className="text-slate-500 font-semibold">MAX 10 KM/H</span>
+              <span className="text-slate-500 font-bold">SLOT REGION</span>
             </div>
 
-            {/* 3 Cards */}
+            {/* 3 Digital Twin Bay Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
               {[
-                { id: "s1", label: "BAY 01", pin: "GPIO 13", adc: "ADC1_CH4", isOccupied: data?.slots?.s1 ?? false },
-                { id: "s2", label: "BAY 02", pin: "GPIO 14", adc: "ADC1_CH6", isOccupied: data?.slots?.s2 ?? false },
-                { id: "s3", label: "BAY 03", pin: "GPIO 27", adc: "ADC2_CH7", isOccupied: data?.slots?.s3 ?? false },
-              ].map((slot) => {
-                const isOccupied = slot.isOccupied;
-                const isDebugOpen = expandedBayDebug[slot.id];
+                { id: "s1", label: "BAY // 01", pin: "13", adc: "ADC1_CH4", isOccupied: data?.slots?.s1 ?? false },
+                { id: "s2", label: "BAY // 02", pin: "14", adc: "ADC1_CH6", isOccupied: data?.slots?.s2 ?? false },
+                { id: "s3", label: "BAY // 03", pin: "27", adc: "ADC2_CH7", isOccupied: data?.slots?.s3 ?? false },
+              ].map((bay) => {
+                const isOccupied = bay.isOccupied;
+                const isDebugOpen = expandedBayDebug[bay.id];
 
                 return (
                   <div
-                    key={slot.id}
-                    className={`relative rounded-xl p-5 flex flex-col justify-between transition-all duration-500 border-2 overflow-hidden ${
+                    key={bay.id}
+                    className={`relative p-5 rounded-lg border-2 transition-all duration-300 flex flex-col justify-between ${
                       isOccupied
-                        ? "bg-gradient-to-b from-rose-950/40 via-[#111728] to-rose-950/50 border-rose-500/70 shadow-[0_0_25px_rgba(244,63,94,0.18)]"
-                        : "bg-gradient-to-b from-emerald-950/40 via-[#111728] to-emerald-950/50 border-emerald-500/70 shadow-[0_0_25px_rgba(16,185,129,0.18)]"
+                        ? "bg-[#140b12] border-rose-500/70 shadow-[0_0_25px_rgba(255,0,85,0.25)]"
+                        : "bg-[#0b1411] border-emerald-500/70 shadow-[0_0_25px_rgba(0,255,157,0.2)]"
                     }`}
                   >
-                    {/* Parking Bay Yellow Road Boundaries */}
-                    <div className="absolute top-0 bottom-0 left-2 w-1.5 bg-gradient-to-b from-amber-400/40 via-amber-400/20 to-amber-400/40 pointer-events-none rounded-full" />
-                    <div className="absolute top-0 bottom-0 right-2 w-1.5 bg-gradient-to-b from-amber-400/40 via-amber-400/20 to-amber-400/40 pointer-events-none rounded-full" />
+                    {/* Bay Markings */}
+                    <div className="absolute top-0 bottom-0 left-1 w-1 bg-amber-400/40 rounded-full pointer-events-none" />
+                    <div className="absolute top-0 bottom-0 right-1 w-1 bg-amber-400/40 rounded-full pointer-events-none" />
 
                     {/* Top Bay Tag */}
-                    <div className="relative z-10 flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-xs font-black tracking-widest text-slate-100 bg-slate-900/95 px-2.5 py-1 rounded border border-white/10">
-                          {slot.label}
-                        </span>
-                      </div>
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="text-xs font-bold tracking-widest text-slate-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-700">
+                        {bay.label}
+                      </span>
                       <span
-                        className={`text-[10px] font-mono font-bold tracking-wider px-2 py-0.5 rounded-full border uppercase ${
+                        className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded border ${
                           isOccupied
-                            ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
-                            : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                            ? "bg-rose-500/20 text-[#ff0055] border-rose-500/40 animate-pulse"
+                            : "bg-emerald-500/20 text-[#00ff9d] border-emerald-500/40"
                         }`}
                       >
-                        {isOccupied ? "OCCUPIED" : "AVAILABLE"}
+                        {isOccupied ? "OCCUPIED" : "VACANT"}
                       </span>
                     </div>
 
-                    {/* Vehicle Silhouette & Animation */}
-                    <div className="relative z-10 my-6 flex flex-col items-center justify-center">
+                    {/* Holographic Isometric Center Representation */}
+                    <div className="my-6 flex flex-col items-center justify-center">
                       {isOccupied ? (
                         <div className="flex flex-col items-center">
-                          <div className="relative p-5 rounded-2xl bg-rose-500/10 border border-rose-500/40 shadow-[0_0_30px_rgba(244,63,94,0.3)]">
-                            <Car className="w-16 h-16 text-rose-400 filter drop-shadow-[0_0_10px_#f43f5e]" />
+                          <div className="relative p-5 rounded-xl bg-rose-500/10 border border-rose-500/40 shadow-[0_0_30px_rgba(255,0,85,0.3)]">
+                            <Car className="w-16 h-16 text-[#ff0055] filter drop-shadow-[0_0_10px_#ff0055]" />
                             <div className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
                               <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-rose-500"></span>
                             </div>
                           </div>
-                          <div className="mt-3 flex items-center gap-1.5 text-xs font-mono font-semibold text-rose-300">
-                            <span>Vehicle Present</span>
-                          </div>
-                          <span className="text-[10px] font-mono text-slate-400">
-                            Distance &lt; 15cm
-                          </span>
+                          <span className="mt-3 text-xs font-bold text-rose-400">VEHICLE IN BAY</span>
+                          <span className="text-[10px] text-slate-400">IR_DIST: &lt;15cm</span>
                         </div>
                       ) : (
                         <div className="flex flex-col items-center">
-                          <div className="relative p-5 rounded-2xl bg-emerald-500/[0.05] border border-dashed border-emerald-500/40 shadow-[0_0_20px_rgba(16,185,129,0.1)]">
+                          <div className="relative p-5 rounded-xl bg-emerald-500/[0.06] border border-dashed border-emerald-500/40 holo-grid shadow-[0_0_20px_rgba(0,255,157,0.15)]">
                             <Car className="w-16 h-16 text-emerald-500/20" />
                             <div className="absolute inset-0 flex items-center justify-center">
-                              <span className="text-[11px] font-mono font-bold text-emerald-400 bg-emerald-950/90 border border-emerald-500/50 px-2 py-0.5 rounded shadow-lg">
-                                FREE BAY
+                              <span className="text-[11px] font-bold text-[#00ff9d] bg-black/80 px-2 py-0.5 rounded border border-emerald-500/50 shadow-lg">
+                                BAY FREE
                               </span>
                             </div>
                           </div>
-                          <div className="mt-3 flex items-center gap-1.5 text-xs font-mono font-semibold text-emerald-400">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                            <span>Ready to Park</span>
-                          </div>
-                          <span className="text-[10px] font-mono text-slate-400">
-                            Beam Clear
+                          <span className="mt-3 text-xs font-bold text-[#00ff9d] flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#00ff9d] animate-ping" />
+                            READY TO PARK
                           </span>
+                          <span className="text-[10px] text-slate-400">BEAM UNOBSTRUCTED</span>
                         </div>
                       )}
                     </div>
 
-                    {/* Sensor Pin Diagnostic & Collapsible Debug Drawer */}
-                    <div className="relative z-10 pt-3 border-t border-white/[0.08]">
-                      <div className="flex items-center justify-between text-[11px] font-mono">
-                        <span className="text-slate-400">{slot.pin}</span>
-                        <span className={isOccupied ? "text-rose-400 font-bold" : "text-emerald-400 font-bold"}>
+                    {/* Sensor Technical Depth & Collapsible Registers */}
+                    <div className="pt-3 border-t border-slate-800 space-y-1 text-xs text-slate-400">
+                      <div className="flex justify-between">
+                        <span>GPIO PIN:</span>
+                        <span className="text-slate-200 font-bold">{bay.pin}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>RAW REGISTER:</span>
+                        <span className={isOccupied ? "text-[#ff0055] font-bold" : "text-[#00f0ff] font-bold"}>
                           {isOccupied ? "SIG_HIGH" : "SIG_LOW"}
                         </span>
                       </div>
 
-                      {/* GPIO & Raw Register Collapsible Toggle */}
+                      {/* Toggle Drawer */}
                       <button
-                        onClick={() => toggleBayDebug(slot.id)}
-                        className="mt-2.5 w-full flex items-center justify-between text-[10px] font-mono text-slate-400 hover:text-cyan-400 py-1 px-2 rounded bg-slate-900/60 border border-white/[0.06] transition"
+                        onClick={() => toggleBayDebug(bay.id)}
+                        className="mt-2 w-full flex items-center justify-between text-[10px] text-slate-400 hover:text-cyan-400 py-1 px-2 rounded bg-black/40 border border-slate-800 transition"
                       >
-                        <span>{isDebugOpen ? "Hide Registers" : "Debug Registers"}</span>
+                        <span>{isDebugOpen ? "HIDE REGISTERS" : "VIEW REGISTERS"}</span>
                         {isDebugOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                       </button>
 
-                      {/* Collapsible Register Details */}
                       {isDebugOpen && (
-                        <div className="mt-2 pt-2 border-t border-white/[0.06] text-[10px] font-mono space-y-1 bg-black/40 p-2 rounded border border-white/[0.05] animate-in fade-in duration-200">
+                        <div className="mt-2 pt-2 border-t border-slate-800 text-[10px] space-y-1 bg-black/60 p-2 rounded">
                           <div className="flex justify-between">
-                            <span className="text-slate-500">Channel:</span>
-                            <span className="text-slate-300">{slot.adc}</span>
+                            <span className="text-slate-500">ADC CHANNEL:</span>
+                            <span className="text-slate-300">{bay.adc}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-slate-500">Raw Register:</span>
-                            <span className={isOccupied ? "text-rose-400 font-bold" : "text-emerald-400 font-bold"}>
-                              {isOccupied ? "0x01 (PULLUP)" : "0x00 (CLEAR)"}
+                            <span className="text-slate-500">PULLUP STATUS:</span>
+                            <span className={isOccupied ? "text-[#ff0055]" : "text-[#00ff9d]"}>
+                              {isOccupied ? "0x01 (ENGAGED)" : "0x00 (CLEAR)"}
                             </span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-slate-500">Debounce:</span>
+                            <span className="text-slate-500">DEBOUNCE:</span>
                             <span className="text-slate-300">200ms Active</span>
                           </div>
                         </div>
@@ -641,93 +567,92 @@ export default function Dashboard() {
               })}
             </div>
 
-            {/* Bottom Facility Status */}
-            <div className="mt-5 pt-4 border-t border-white/[0.08] flex flex-col sm:flex-row items-center justify-between text-xs font-mono text-slate-400 gap-2">
-              <span className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-cyan-400" />
-                <span>Zero-Latency Proximity Matrix &bull; Collision Avoidance Subsystem</span>
+            {/* Sector Utilization Footer */}
+            <div className="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+              <span className="flex items-center gap-1.5 text-cyan-400">
+                <Sparkles className="w-4 h-4" />
+                <span>AUTONOMOUS VEHICLE GUIDANCE ACTIVE</span>
               </span>
-              <span>
-                Total Lot Utilization: <strong className="text-white">{occupancyRate}%</strong>
-              </span>
+              <span>UTILIZATION: <strong className="text-white">{occupancyRate}%</strong></span>
             </div>
           </div>
 
-          {/* RIGHT COLUMN: VISUAL GATE SERVO WIDGET + TELEMETRY STREAM LOGS */}
+          {/* RIGHT COLUMN: RADIAL SERVO DIAL + MISSION CONTROL TERMINAL */}
           <div className="space-y-6">
             
-            {/* Visual Barrier Gate Servo Widget */}
-            <div className="glass-panel rounded-2xl p-6 relative overflow-hidden">
-              <div className="flex items-center justify-between pb-4 border-b border-white/[0.08]">
+            {/* RADIAL SERVO SPEEDOMETER / DIAL GAUGE */}
+            <div className="bg-[#0c101d] border border-cyan-500/30 p-6 rounded shadow-[0_0_20px_rgba(0,240,255,0.08)] relative overflow-hidden">
+              <div className="flex justify-between items-center pb-4 border-b border-slate-800">
                 <div className="flex items-center gap-2">
                   <Gauge className="w-4 h-4 text-cyan-400" />
-                  <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">
-                    SG90 Servo Barrier Arm
-                  </h3>
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-white">SG90 SERVO RADIAL DIAL</h3>
                 </div>
-                <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold border uppercase ${gateInfo.badge}`}>
+                <span className={`text-[10px] px-2 py-0.5 rounded border uppercase font-bold ${gateInfo.badge}`}>
                   {gateStatus}
                 </span>
               </div>
 
-              {/* Graphical Servo Barrier Simulation */}
+              {/* Radial Arc SVG Gauge */}
               <div className="py-6 flex flex-col items-center justify-center">
-                <div className="relative w-52 h-36 flex items-end justify-center">
+                <div className="relative w-44 h-32 flex items-center justify-center">
                   
-                  {/* Servo Post Housing */}
-                  <div className="w-8 h-28 bg-gradient-to-t from-slate-900 via-slate-800 to-slate-700 rounded-t-lg border border-slate-500 relative flex flex-col items-center justify-between py-2 shadow-xl">
-                    <div className={`w-3 h-3 rounded-full transition-all duration-300 ${gateStatus === "OPEN" ? "bg-emerald-400 shadow-[0_0_10px_#10b981]" : "bg-slate-700"}`} />
-                    <div className={`w-3 h-3 rounded-full transition-all duration-300 ${gateStatus === "CLOSED" ? "bg-amber-400 shadow-[0_0_10px_#f59e0b]" : "bg-slate-700"}`} />
-                    <div className={`w-3 h-3 rounded-full transition-all duration-300 ${gateStatus === "FULL" ? "bg-rose-500 shadow-[0_0_10px_#f43f5e]" : "bg-slate-700"}`} />
-                    <span className="text-[8px] font-mono text-slate-400">SG90</span>
-                  </div>
+                  {/* SVG Arc Gauge */}
+                  <svg className="w-40 h-40 -rotate-90 transform" viewBox="0 0 100 100">
+                    {/* Background Track Arc */}
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="40"
+                      stroke="#1e293b"
+                      strokeWidth="8"
+                      fill="transparent"
+                      strokeDasharray="251.2"
+                      strokeDashoffset="62.8"
+                    />
+                    {/* Active Animated Arc */}
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="40"
+                      stroke={gateStatus === "OPEN" ? "#00ff9d" : gateStatus === "CLOSED" ? "#ffb703" : "#ff0055"}
+                      strokeWidth="8"
+                      strokeLinecap="round"
+                      fill="transparent"
+                      strokeDasharray="251.2"
+                      strokeDashoffset={251.2 - (188.4 * (gateInfo.angleDeg / 90))}
+                      className="transition-all duration-700 ease-out"
+                    />
+                  </svg>
 
-                  {/* Barrier Arm Servo Rotating Pivot */}
-                  <div
-                    className={`origin-left transition-transform duration-700 ease-out absolute bottom-16 left-[62px] ${gateInfo.barrierAngle}`}
-                  >
-                    <div className="w-40 h-3.5 rounded-r-full bg-gradient-to-r from-red-600 via-white to-red-600 border border-slate-300 shadow-xl flex items-center justify-around px-2">
-                      <span className="w-2 h-full bg-slate-900/50" />
-                      <span className="w-2 h-full bg-slate-900/50" />
-                      <span className="w-2 h-full bg-slate-900/50" />
-                      <span className="w-2 h-full bg-slate-900/50" />
-                    </div>
+                  {/* Inside Arc Center Info */}
+                  <div className="absolute flex flex-col items-center justify-center">
+                    <span className="text-3xl font-black text-white">{gateInfo.angleDeg}°</span>
+                    <span className="text-[10px] text-slate-400 uppercase tracking-wider">SERVO ANGLE</span>
                   </div>
-
-                  {/* Road Floor Line */}
-                  <div className="absolute bottom-0 inset-x-0 h-2 bg-slate-700 rounded-full" />
                 </div>
 
-                <div className="text-center mt-3">
-                  <div className={`text-xs font-mono font-bold ${gateInfo.accent}`}>
-                    {gateInfo.title}
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    {gateInfo.desc}
-                  </p>
+                <div className="text-center mt-2">
+                  <div className={`text-xs font-bold ${gateInfo.accent}`}>{gateInfo.title}</div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">{gateInfo.desc}</p>
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-white/[0.08] flex items-center justify-between text-[11px] font-mono text-slate-400">
-                <span>Current Rotation</span>
-                <span className={`font-semibold ${gateInfo.accent}`}>{gateInfo.servoDegrees}</span>
+              <div className="pt-3 border-t border-slate-800 flex justify-between text-xs text-slate-400">
+                <span>INTERLOCK:</span>
+                <span className="text-white font-bold">{gateStatus === "FULL" ? "LOCKED (FULL)" : "ACTIVE"}</span>
               </div>
             </div>
 
-            {/* Telemetry Stream Logs with Filters */}
-            <div className="glass-panel rounded-2xl p-5 relative overflow-hidden flex flex-col">
+            {/* MISSION CONTROL CRT TELEMETRY TERMINAL */}
+            <div className="bg-[#0c101d] border border-cyan-500/30 p-5 rounded shadow-[0_0_20px_rgba(0,240,255,0.08)] relative overflow-hidden crt-scanlines">
               
-              <div className="flex flex-col gap-2 pb-3 border-b border-white/[0.08]">
-                <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-2 pb-3 border-b border-slate-800">
+                <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
                     <Terminal className="w-4 h-4 text-cyan-400" />
-                    <h3 className="text-xs font-mono uppercase tracking-wider font-bold text-white">
-                      Telemetry Stream Buffer
-                    </h3>
+                    <h3 className="text-xs uppercase font-bold tracking-widest text-white">MISSION CONTROL LOGS</h3>
                   </div>
-                  <span className="text-[10px] font-mono text-slate-400">
-                    {filteredLogs.length} events
-                  </span>
+                  <span className="text-[10px] text-slate-400">BUFFER: {filteredLogs.length}</span>
                 </div>
 
                 {/* Filter Tabs */}
@@ -736,10 +661,10 @@ export default function Dashboard() {
                     <button
                       key={filter}
                       onClick={() => setLogFilter(filter)}
-                      className={`px-2 py-0.5 rounded text-[10px] font-mono transition ${
+                      className={`px-2 py-0.5 rounded text-[10px] transition ${
                         logFilter === filter
-                          ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
-                          : "text-slate-400 bg-slate-900 hover:text-slate-200"
+                          ? "bg-cyan-500/20 text-[#00f0ff] border border-cyan-500/40"
+                          : "text-slate-400 bg-slate-900 hover:text-white"
                       }`}
                     >
                       {filter}
@@ -748,49 +673,47 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Event Log Window */}
-              <div className="mt-3 space-y-1.5 max-h-[175px] overflow-y-auto font-mono text-[11px] pr-1">
-                {filteredLogs.length === 0 ? (
-                  <div className="text-slate-500 py-4 text-center">No logs matching filter.</div>
-                ) : (
-                  filteredLogs.map((log) => (
-                    <div key={log.id} className="flex items-start gap-2 py-0.5 text-slate-300">
-                      <span className="text-slate-500 whitespace-nowrap" suppressHydrationWarning>
-                        [{log.time}]
-                      </span>
-                      <span
-                        className={
-                          log.type === "error"
-                            ? "text-rose-400 font-bold"
-                            : log.type === "warn"
-                            ? "text-amber-300"
-                            : log.type === "post"
-                            ? "text-cyan-300"
-                            : "text-emerald-400"
-                        }
-                      >
-                        &gt; {log.msg}
-                      </span>
-                    </div>
-                  ))
-                )}
+              {/* Event Log Window with Blinking Cursor */}
+              <div className="mt-3 space-y-1 max-h-[170px] overflow-y-auto text-[11px] pr-1">
+                {filteredLogs.map((log) => (
+                  <div key={log.id} className="flex items-start gap-1.5 py-0.5">
+                    <span className="text-slate-500 whitespace-nowrap" suppressHydrationWarning>[{log.time}]</span>
+                    <span
+                      className={
+                        log.type === "error"
+                          ? "text-[#ff0055] font-bold"
+                          : log.type === "warn"
+                          ? "text-[#ffb703]"
+                          : log.type === "post"
+                          ? "text-[#00f0ff]"
+                          : "text-[#00ff9d]"
+                      }
+                    >
+                      &gt; {log.msg}
+                    </span>
+                  </div>
+                ))}
+                
+                {/* Blinking Cursor */}
+                <div className="flex items-center gap-1 text-cyan-400 text-xs mt-2">
+                  <span>root@esp32-mesh:~#</span>
+                  <span className="w-2 h-4 bg-cyan-400 animate-pulse" />
+                </div>
               </div>
             </div>
           </div>
         </section>
       </div>
 
-      {/* 4. DEDICATED FLOATING DEBUG PANEL / SIMULATOR (COLLAPSIBLE TAB) */}
+      {/* 4. DEDICATED MISSION CONTROL DEBUG SIMULATOR (FLOATING TAB) */}
       <aside className="fixed bottom-4 right-4 z-50">
         {isDebugPanelOpen ? (
-          <div className="glass-panel-elevated rounded-2xl p-4 shadow-2xl border border-cyan-500/40 max-w-md w-full animate-in slide-in-from-bottom-5 duration-300">
-            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+          <div className="bg-[#0c101d] border border-cyan-500/40 p-4 rounded-lg shadow-2xl max-w-sm w-full animate-in slide-in-from-bottom-5 duration-300">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <Sliders className="w-4 h-4 text-cyan-400" />
-                <span className="text-xs font-mono font-bold text-white">Hardware Debug Simulator</span>
-                <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950 px-1.5 py-0.2 rounded border border-cyan-800">
-                  Live
-                </span>
+                <span className="text-xs font-bold text-white tracking-wider">HARDWARE SIMULATOR</span>
+                <span className="text-[10px] text-cyan-400 bg-cyan-950 px-1 py-0.2 rounded border border-cyan-800">LIVE</span>
               </div>
               <button
                 onClick={() => setIsDebugPanelOpen(false)}
@@ -807,28 +730,28 @@ export default function Dashboard() {
             {/* Bay Toggles */}
             <div className="grid grid-cols-3 gap-2">
               {[
-                { key: "s1" as const, label: "Bay 01", state: data?.slots?.s1 ?? false },
-                { key: "s2" as const, label: "Bay 02", state: data?.slots?.s2 ?? false },
-                { key: "s3" as const, label: "Bay 03", state: data?.slots?.s3 ?? false },
+                { key: "s1" as const, label: "BAY 01", state: data?.slots?.s1 ?? false },
+                { key: "s2" as const, label: "BAY 02", state: data?.slots?.s2 ?? false },
+                { key: "s3" as const, label: "BAY 03", state: data?.slots?.s3 ?? false },
               ].map((b) => (
                 <button
                   key={b.key}
                   onClick={() => sendDemoUpdate({ [b.key]: !b.state })}
                   disabled={isDemoSubmitting}
-                  className={`p-2 rounded-xl text-xs font-mono font-semibold transition border flex flex-col items-center justify-center gap-1 ${
+                  className={`p-2 rounded text-xs font-bold transition border flex flex-col items-center justify-center gap-1 ${
                     b.state
-                      ? "bg-rose-950/80 border-rose-500 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.3)]"
-                      : "bg-slate-900 border-white/10 text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300"
+                      ? "bg-[#140b12] border-rose-500 text-[#ff0055] shadow-[0_0_10px_rgba(255,0,85,0.3)]"
+                      : "bg-[#0b1411] border-slate-800 text-slate-300 hover:border-emerald-500/50 hover:text-[#00ff9d]"
                   }`}
                 >
                   <span className="text-[10px] text-slate-400">{b.label}</span>
-                  <span className="font-bold">{b.state ? "OCCUPIED" : "VACANT"}</span>
+                  <span>{b.state ? "OCCUPIED" : "VACANT"}</span>
                 </button>
               ))}
             </div>
 
             {/* Gate Cycle & Reset */}
-            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/10">
+            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-800">
               <button
                 onClick={() => {
                   const nextGate: Record<string, string> = {
@@ -840,30 +763,30 @@ export default function Dashboard() {
                   sendDemoUpdate({ gate: nextGate[gateStatus] || "IDLE" });
                 }}
                 disabled={isDemoSubmitting}
-                className="flex-1 py-1.5 px-3 rounded-xl text-xs font-mono font-semibold bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-900 transition flex items-center justify-center gap-1.5"
+                className="flex-1 py-1.5 px-3 rounded text-xs font-bold bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-900 transition flex items-center justify-center gap-1.5"
               >
-                <span>Cycle Barrier:</span>
-                <span className="text-white font-bold">{gateStatus}</span>
+                <span>CYCLE BARRIER:</span>
+                <span className="text-white font-black">{gateStatus}</span>
               </button>
 
               <button
                 onClick={() => sendDemoUpdate({ s1: false, s2: false, s3: false, gate: "IDLE" })}
                 disabled={isDemoSubmitting}
                 title="Reset all bays"
-                className="py-1.5 px-2.5 rounded-xl text-xs font-mono text-slate-400 bg-slate-900 border border-white/10 hover:text-white hover:border-white/20 transition flex items-center gap-1"
+                className="py-1.5 px-2.5 rounded text-xs text-slate-400 bg-slate-900 border border-slate-800 hover:text-white hover:border-slate-600 transition flex items-center gap-1"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Reset</span>
+                <span>RESET</span>
               </button>
             </div>
           </div>
         ) : (
           <button
             onClick={() => setIsDebugPanelOpen(true)}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-mono font-semibold bg-cyan-950/90 border border-cyan-500/50 text-cyan-300 shadow-xl hover:bg-cyan-900 transition backdrop-blur-md"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-bold bg-[#0c101d] border border-cyan-500/50 text-cyan-300 shadow-xl hover:bg-cyan-950 transition"
           >
             <Sliders className="w-4 h-4 text-cyan-400" />
-            <span>Open Hardware Simulator</span>
+            <span>OPEN HARDWARE SIMULATOR</span>
           </button>
         )}
       </aside>
